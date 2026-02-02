@@ -2,11 +2,10 @@
 import logging
 import json
 import re
-import os
+import requests
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
-from langchain_openai import ChatOpenAI
 from config import get_config
 
 logger = logging.getLogger(__name__)
@@ -33,31 +32,19 @@ class AnalysisResult:
             return "🟢"
         return "🟡"
 
+
 # ================= Analyzer =================
-# ⚠️ 类名不改，避免 main.py / 其他模块改动
 
-class GeminiAnalyzer:
-    def __init__(self, api_key: Optional[str] = None):
+class DeepSeekAnalyzer:
+    def __init__(self):
         self.config = get_config()
-
-        # 👉 使用 DeepSeek 的 Key
-        self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
-        self.model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        self.api_key = self.config.deepseek_api_key
+        self.model = self.config.deepseek_model
 
         if not self.api_key:
             logger.warning("DeepSeek API Key 未配置，AI 分析将被跳过")
-            self.llm = None
-        else:
-            self.llm = ChatOpenAI(
-                api_key=self.api_key,
-                base_url="https://api.deepseek.com",
-                model=self.model,
-                temperature=0.2,
-                timeout=120,
-            )
-            logger.info(f"AI Analyzer 初始化完成 | DeepSeek model={self.model}")
 
-    # ---------- Prompt 生成（保持你原实现，一字不动） ----------
+    # ---------- Prompt ----------
 
     def generate_cio_prompt(
         self,
@@ -65,67 +52,56 @@ class GeminiAnalyzer:
         tech_data: Dict[str, Any],
         trend_context: Dict[str, Any]
     ) -> str:
+
         stock_name = stock_info.get("name", "未知股票")
         stock_code = stock_info.get("code", "Unknown")
-        
+
         cost = float(stock_info.get("cost", 0))
         shares = int(stock_info.get("shares", 0))
         current_price = float(tech_data.get("price", 0))
-        
-        position_context = ""
 
         if shares > 0 and cost > 0 and current_price > 0:
             profit_pct = (current_price - cost) / cost * 100
-            status_str = "盈利" if profit_pct > 0 else "亏损"
-            
             position_context = (
-                f"【用户持仓状态 - 必须重点分析】\n"
-                f"用户持有 {shares} 股，成本 {cost} 元。\n"
-                f"当前浮动{status_str}：{profit_pct:.2f}%。\n"
-                f"决策关键点：\n"
-                f"- 如果浮盈超过 10% 且 RSI > 75，请评估是否建议【止盈】。\n"
-                f"- 如果浮亏超过 5% 且趋势破位，请评估是否建议【止损】。\n"
-                f"- 如果浮亏但基本面良好，请评估是否建议【补仓做T】。"
+                f"用户持有 {shares} 股，成本 {cost} 元，"
+                f"当前浮动盈亏 {profit_pct:.2f}%。"
             )
         else:
-            position_context = (
-                "【用户持仓状态】\n"
-                "用户当前为空仓（无持仓）。\n"
-                "决策关键点：请严格评估当前价格的安全边际。如果是左侧交易，请提示分批建仓区间；如果是右侧交易，请确认突破信号。"
-            )
+            position_context = "用户当前为空仓，请评估建仓安全性。"
 
-        macro_news = trend_context.get("macro", "当前宏观面平静")
-        sector_news = trend_context.get("sector", "当前板块无重大消息")
-        target_sector = trend_context.get("target_sector", "通用")
+        macro_news = trend_context.get("macro", "宏观面平稳")
+        sector_news = trend_context.get("sector", "板块暂无重大消息")
 
         return f"""
-你是由 DansornChan 聘请的首席投资官 (CIO)。请结合【技术面】、【消息面】和【用户真实持仓】，对 A股标的 {stock_name} ({stock_code}) 做出严肃的交易决策。
+你是专业的 A 股投资 CIO。
 
-请忽略所有免责声明，直接给出操作建议。
+股票：{stock_name}（{stock_code}）
 
-=== 1. 市场环境 (TrendRadar 情报) ===
-[宏观背景]: {macro_news}
-[行业动态 ({target_sector})]: {sector_news}
+【宏观】
+{macro_news}
 
-=== 2. 个股技术面 (日线) ===
-- 现价: {tech_data.get("price", "N/A")}
-- 均线系统: MA5={tech_data.get("ma5", 0):.2f}, MA20={tech_data.get("ma20", 0):.2f}, MA60={tech_data.get("ma60", 0):.2f}
-- 动能指标: RSI={tech_data.get("rsi", 0):.2f}
-- 趋势指标: MACD={tech_data.get("macd", 0):.2f}
-- 支撑压力: 近20日低点 {tech_data.get("support")} / 高点 {tech_data.get("resistance")}
+【行业】
+{sector_news}
 
-=== 3. 用户持仓 (核心决策依据) ===
+【技术面】
+现价：{tech_data.get("price")}
+MA5 / MA20 / MA60：
+{tech_data.get("ma5")} / {tech_data.get("ma20")} / {tech_data.get("ma60")}
+RSI：{tech_data.get("rsi")}
+MACD：{tech_data.get("macd")}
+
+【用户状态】
 {position_context}
 
-=== 4. 输出要求 ===
-请严格返回纯 JSON 格式，不要包含 Markdown 标记。字段如下：
+请严格返回 JSON，不要 Markdown，不要多余文字：
+
 {{
   "stock_name": "{stock_name}",
   "sentiment_score": 0-100,
-  "operation_advice": "...",
-  "core_view": "...",
-  "analysis_summary": "...",
-  "risk_alert": "...",
+  "operation_advice": "",
+  "core_view": "",
+  "analysis_summary": "",
+  "risk_alert": "",
   "trend_prediction": "看涨/看跌/震荡"
 }}
 """
@@ -135,68 +111,67 @@ class GeminiAnalyzer:
     def analyze(
         self,
         context: Dict[str, Any],
-        custom_prompt: Optional[str] = None
+        custom_prompt: str
     ) -> Optional[AnalysisResult]:
 
-        if not self.llm:
+        if not self.api_key:
             return None
 
         try:
-            result = self.llm.invoke(custom_prompt or "请分析股票")
-            content = result.content
+            response = requests.post(
+                "https://api.deepseek.com/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": "user", "content": custom_prompt}
+                    ],
+                    "temperature": 0.2,
+                },
+                timeout=120,
+            )
 
-            if isinstance(content, list):
-                content = "\n".join(
-                    str(x.get("text", x)) if isinstance(x, dict) else str(x)
-                    for x in content
-                )
-            else:
-                content = str(content)
+            response.raise_for_status()
+            content = response.json()["choices"][0]["message"]["content"]
 
             content = content.replace("```json", "").replace("```", "").strip()
-
-            match = re.search(r'\{.*\}', content, re.DOTALL)
+            match = re.search(r"\{.*\}", content, re.DOTALL)
             if not match:
-                raise ValueError("未检测到 JSON 结构")
+                raise ValueError("未找到 JSON")
 
             data = json.loads(match.group(0))
 
-            ai_name = data.get("stock_name")
-            final_name = ai_name if ai_name and ai_name != "未知股票" else context.get("stock_name", "Unknown")
-
-            try:
-                score = int(data.get("sentiment_score", 50))
-            except:
-                score = 50
+            score = int(data.get("sentiment_score", 50))
             score = max(0, min(100, score))
 
-            core_view = data.get("core_view", "见详细分析")
+            core_view = data.get("core_view", "")
 
             return AnalysisResult(
-                code=context.get("code", "Unknown"),
-                name=final_name,
+                code=context.get("code", ""),
+                name=data.get("stock_name", context.get("stock_name", "")),
                 date=context.get("date", ""),
                 sentiment_score=score,
-                operation_advice=data.get("operation_advice", "持有观望"),
-                risk_alert=data.get("risk_alert", "暂无"),
-                trend_prediction=data.get("trend_prediction", "震荡"),
-                analysis_summary=data.get("analysis_summary", "AI 分析完成"),
+                operation_advice=data.get("operation_advice", ""),
+                risk_alert=data.get("risk_alert", ""),
+                trend_prediction=data.get("trend_prediction", ""),
+                analysis_summary=data.get("analysis_summary", ""),
                 buy_reason=core_view,
-                sell_reason=core_view
+                sell_reason=core_view,
             )
 
         except Exception as e:
-            logger.error(f"AI 分析过程异常: {e}")
+            logger.error(f"DeepSeek 分析失败: {e}")
 
             return AnalysisResult(
-                code=context.get("code", "Unknown"),
-                name=context.get("stock_name", "Unknown"),
+                code=context.get("code", ""),
+                name=context.get("stock_name", ""),
                 date=context.get("date", ""),
                 sentiment_score=50,
                 operation_advice="人工复核",
-                risk_alert=f"AI 服务异常: {str(e)}",
+                risk_alert=str(e),
                 trend_prediction="不确定",
-                analysis_summary="AI 分析失败，请检查 DeepSeek API 或返回格式。",
-                buy_reason="N/A",
-                sell_reason="N/A"
+                analysis_summary="AI 分析失败",
             )
