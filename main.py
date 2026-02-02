@@ -161,11 +161,11 @@ class StockAnalysisPipeline:
     # ---------- 🟢 新增：合并 AI 研究观点 ----------
 
     def _merge_trendradar_into_context(self, context: dict, ai_text: Optional[str]) -> dict:
-    if not ai_text:
+        if not ai_text:
+            return context
+    
+        context["trendradar_ai"] = ai_text
         return context
-
-    context["trendradar_ai"] = ai_text
-    return context
 
     # ---------- 技术指标 ----------
 
