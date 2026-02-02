@@ -237,11 +237,11 @@ class StockAnalysisPipeline:
                 + "\n【说明】以上结论为跨市场、多源信息综合判断，应优先纳入交易决策。"
             )
 
-base_prompt = self.analyzer.generate_cio_prompt(
-    stock_info, tech_data, trend_context
-)
-
-prompt = base_prompt + extra_research
+        base_prompt = self.analyzer.generate_cio_prompt(
+            stock_info, tech_data, trend_context
+        )
+        
+        prompt = base_prompt + extra_research
 
 
         context = {
