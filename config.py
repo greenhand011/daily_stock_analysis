@@ -13,7 +13,7 @@ A股自选股智能分析系统 - 配置管理模块
 import os
 from pathlib import Path
 from typing import List, Optional
-from dotenv import load_dotenv, dotenv_values
+from dotenv import load_dotenv
 from dataclasses import dataclass, field
 
 
@@ -42,7 +42,6 @@ class Config:
     gemini_model: str = "gemini-3-flash-preview"
     gemini_model_fallback: str = "gemini-2.5-flash"
 
-    # Gemini 流控
     gemini_request_delay: float = 2.0
     gemini_max_retries: int = 5
     gemini_retry_delay: float = 5.0
@@ -58,7 +57,6 @@ class Config:
     serpapi_keys: List[str] = field(default_factory=list)
 
     # ================= 通知配置 =================
-
     wechat_webhook_url: Optional[str] = None
     feishu_webhook_url: Optional[str] = None
 
@@ -76,7 +74,6 @@ class Config:
     custom_webhook_bearer_token: Optional[str] = None
 
     # ================= 系统配置 =================
-
     single_stock_notify: bool = False
     database_path: str = "./data/stock_analysis.db"
 
@@ -113,22 +110,18 @@ class Config:
         env_path = Path(__file__).parent / ".env"
         load_dotenv(dotenv_path=env_path)
 
-        # 股票列表
         stock_list_str = os.getenv("STOCK_LIST", "")
         stock_list = [s.strip() for s in stock_list_str.split(",") if s.strip()]
         if not stock_list:
             stock_list = ["600519", "000001", "300750"]
 
-        # 搜索 Key
         def split_keys(name: str) -> List[str]:
             return [k.strip() for k in os.getenv(name, "").split(",") if k.strip()]
 
         return cls(
             stock_list=stock_list,
-
             tushare_token=os.getenv("TUSHARE_TOKEN"),
 
-            # === AI ===
             deepseek_api_key=os.getenv("DEEPSEEK_API_KEY"),
             deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
 
@@ -143,12 +136,10 @@ class Config:
             openai_base_url=os.getenv("OPENAI_BASE_URL"),
             openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
 
-            # === 搜索 ===
             bocha_api_keys=split_keys("BOCHA_API_KEYS"),
             tavily_api_keys=split_keys("TAVILY_API_KEYS"),
             serpapi_keys=split_keys("SERPAPI_API_KEYS"),
 
-            # === 通知 ===
             wechat_webhook_url=os.getenv("WECHAT_WEBHOOK_URL"),
             feishu_webhook_url=os.getenv("FEISHU_WEBHOOK_URL"),
 
@@ -165,7 +156,6 @@ class Config:
             custom_webhook_urls=split_keys("CUSTOM_WEBHOOK_URLS"),
             custom_webhook_bearer_token=os.getenv("CUSTOM_WEBHOOK_BEARER_TOKEN"),
 
-            # === 系统 ===
             single_stock_notify=os.getenv("SINGLE_STOCK_NOTIFY", "false").lower() == "true",
             database_path=os.getenv("DATABASE_PATH", "./data/stock_analysis.db"),
 
@@ -183,6 +173,17 @@ class Config:
             webui_host=os.getenv("WEBUI_HOST", "127.0.0.1"),
             webui_port=int(os.getenv("WEBUI_PORT", "8000")),
         )
+
+    # ================= ★ 新增：数据库接口 =================
+
+    def get_db_url(self) -> str:
+        """
+        提供给 storage.py 使用的数据库连接 URL
+        默认 SQLite
+        """
+        db_path = Path(self.database_path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        return f"sqlite:///{db_path.resolve()}"
 
     # ================= 校验 =================
 
