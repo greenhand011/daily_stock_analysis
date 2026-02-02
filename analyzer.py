@@ -36,43 +36,31 @@ class AnalysisResult:
 
 class GeminiAnalyzer:
     """
-    多模型自动切换 Analyzer
-    优先级：
-    DeepSeek → Gemini → OpenAI-compatible
+    实际已升级为多模型 Analyzer：
+    优先级：DeepSeek → Gemini
     """
 
     def __init__(self):
         self.config = get_config()
         self.llm = None
-        self.model_name = None
+        self.backend = None
 
-        self._init_llm()
-
-    # ---------- 初始化模型 ----------
-
-    def _init_llm(self):
-        """
-        按优先级尝试初始化可用模型
-        """
-        # 1️⃣ DeepSeek（OpenAI-compatible）
+        # ---------- 1️⃣ DeepSeek（首选） ----------
         if self.config.deepseek_api_key:
             try:
-                from langchain_openai import ChatOpenAI
+                from openai import OpenAI
 
-                self.llm = ChatOpenAI(
+                self.llm = OpenAI(
                     api_key=self.config.deepseek_api_key,
-                    base_url="https://api.deepseek.com",
-                    model=self.config.deepseek_model,
-                    temperature=0.2,
-                    timeout=120,
+                    base_url="https://api.deepseek.com/v1",
                 )
-                self.model_name = f"DeepSeek({self.config.deepseek_model})"
-                logger.info(f"✅ 使用 {self.model_name}")
+                self.backend = "deepseek"
+                logger.info("✅ 使用 DeepSeek 作为 AI 分析引擎")
                 return
             except Exception as e:
-                logger.warning(f"DeepSeek 初始化失败，降级处理: {e}")
+                logger.warning(f"DeepSeek 初始化失败: {e}")
 
-        # 2️⃣ Gemini
+        # ---------- 2️⃣ Gemini（备用） ----------
         if self.config.gemini_api_key:
             try:
                 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -83,109 +71,135 @@ class GeminiAnalyzer:
                     temperature=0.2,
                     timeout=120,
                 )
-                self.model_name = f"Gemini({self.config.gemini_model})"
-                logger.info(f"✅ 使用 {self.model_name}")
+                self.backend = "gemini"
+                logger.info("⚠️ 回退使用 Gemini 作为 AI 分析引擎")
                 return
             except Exception as e:
-                logger.warning(f"Gemini 初始化失败，降级处理: {e}")
+                logger.warning(f"Gemini 初始化失败: {e}")
 
-        # 3️⃣ OpenAI-compatible（兜底）
-        if self.config.openai_api_key and self.config.openai_base_url:
-            try:
-                from langchain_openai import ChatOpenAI
+        logger.error("❌ 未能初始化任何 AI 模型，分析将被跳过")
 
-                self.llm = ChatOpenAI(
-                    api_key=self.config.openai_api_key,
-                    base_url=self.config.openai_base_url,
-                    model=self.config.openai_model,
-                    temperature=0.2,
-                    timeout=120,
-                )
-                self.model_name = f"OpenAI-compatible({self.config.openai_model})"
-                logger.info(f"✅ 使用 {self.model_name}")
-                return
-            except Exception as e:
-                logger.error(f"OpenAI-compatible 初始化失败: {e}")
-
-        logger.error("❌ 无可用 AI 模型，分析功能将被跳过")
-        self.llm = None
-
-    # ---------- Prompt 生成（保持你原逻辑） ----------
+    # ---------- Prompt 生成 ----------
 
     def generate_cio_prompt(
         self,
         stock_info: Dict[str, Any],
         tech_data: Dict[str, Any],
-        trend_context: Dict[str, Any]
+        trend_context: Dict[str, Any],
     ) -> str:
-        # ⚠️ 这一段请你 **原封不动**
-        # 直接复制你现在 analyzer.py 里的 generate_cio_prompt 实现
-        ...
-    
+
+        stock_name = stock_info.get("name", "未知股票")
+        stock_code = stock_info.get("code", "Unknown")
+
+        cost = float(stock_info.get("cost", 0))
+        shares = int(stock_info.get("shares", 0))
+        current_price = float(tech_data.get("price", 0))
+
+        if shares > 0 and cost > 0 and current_price > 0:
+            profit_pct = (current_price - cost) / cost * 100
+            position_context = (
+                f"用户持仓 {shares} 股，成本 {cost} 元，"
+                f"当前收益 {profit_pct:.2f}%。"
+            )
+        else:
+            position_context = "用户当前为空仓，请评估安全边际与建仓方式。"
+
+        macro_news = trend_context.get("macro", "当前宏观面平静")
+        sector_news = trend_context.get("sector", "板块暂无重大消息")
+        target_sector = trend_context.get("target_sector", "通用")
+
+        return f"""
+你是专业的 A 股首席投资官（CIO）。
+
+请基于【消息面 + 技术面 + 用户真实持仓】，对 {stock_name}（{stock_code}）给出交易决策。
+
+=== 市场环境（TrendRadar）===
+宏观：{macro_news}
+行业（{target_sector}）：{sector_news}
+
+=== 技术面（日线）===
+现价：{tech_data.get("price")}
+MA5 / MA20 / MA60：{tech_data.get("ma5")} / {tech_data.get("ma20")} / {tech_data.get("ma60")}
+RSI：{tech_data.get("rsi")}
+MACD：{tech_data.get("macd")}
+支撑 / 压力：{tech_data.get("support")} / {tech_data.get("resistance")}
+
+=== 用户持仓 ===
+{position_context}
+
+=== 输出要求 ===
+仅返回 JSON，不要 Markdown：
+{{
+  "stock_name": "{stock_name}",
+  "sentiment_score": 0-100,
+  "operation_advice": "操作建议",
+  "core_view": "一句话核心逻辑",
+  "analysis_summary": "详细分析（结合持仓）",
+  "risk_alert": "主要风险",
+  "trend_prediction": "未来1周走势"
+}}
+"""
+
     # ---------- 核心分析 ----------
 
     def analyze(
         self,
         context: Dict[str, Any],
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
     ) -> Optional[AnalysisResult]:
 
-        if not self.llm:
-            return self._fallback_result(context, "无可用 AI 模型")
+        if not self.llm or not self.backend:
+            return None
 
         try:
-            result = self.llm.invoke(custom_prompt or "请分析股票")
-            content = result.content
-
-            if isinstance(content, list):
-                content = "\n".join(
-                    str(x.get("text", x)) if isinstance(x, dict) else str(x)
-                    for x in content
+            # ===== DeepSeek =====
+            if self.backend == "deepseek":
+                resp = self.llm.chat.completions.create(
+                    model=self.config.deepseek_model,
+                    messages=[{"role": "user", "content": custom_prompt}],
+                    temperature=0.2,
                 )
+                content = resp.choices[0].message.content
+
+            # ===== Gemini =====
             else:
-                content = str(content)
+                result = self.llm.invoke(custom_prompt)
+                content = result.content
 
-            content = content.replace("```json", "").replace("```", "").strip()
+            # ---------- JSON 清洗 ----------
+            content = str(content).replace("```json", "").replace("```", "").strip()
             match = re.search(r"\{.*\}", content, re.DOTALL)
-            if not match:
-                raise ValueError("未找到 JSON 结构")
+            if match:
+                content = match.group(0)
 
-            data = json.loads(match.group(0))
+            data = json.loads(content)
 
             score = int(data.get("sentiment_score", 50))
             score = max(0, min(100, score))
-
-            core_view = data.get("core_view", "见详细分析")
+            core_view = data.get("core_view", "")
 
             return AnalysisResult(
-                code=context.get("code", "Unknown"),
-                name=data.get("stock_name", context.get("stock_name", "Unknown")),
+                code=context.get("code", ""),
+                name=data.get("stock_name", context.get("stock_name", "")),
                 date=context.get("date", ""),
                 sentiment_score=score,
                 operation_advice=data.get("operation_advice", "观望"),
-                risk_alert=data.get("risk_alert", "暂无"),
-                trend_prediction=data.get("trend_prediction", "震荡"),
+                risk_alert=data.get("risk_alert", ""),
+                trend_prediction=data.get("trend_prediction", ""),
                 analysis_summary=data.get("analysis_summary", ""),
                 buy_reason=core_view,
                 sell_reason=core_view,
             )
 
         except Exception as e:
-            logger.error(f"AI 分析失败 ({self.model_name}): {e}")
-            return self._fallback_result(context, str(e))
-
-    # ---------- 保底 ----------
-
-    def _fallback_result(self, context: Dict[str, Any], reason: str) -> AnalysisResult:
-        return AnalysisResult(
-            code=context.get("code", "Unknown"),
-            name=context.get("stock_name", "Unknown"),
-            date=context.get("date", ""),
-            sentiment_score=50,
-            operation_advice="人工复核",
-            risk_alert=f"AI 不可用: {reason}",
-            trend_prediction="不确定",
-            analysis_summary="AI 服务异常，建议人工查看。",
-            buy_reason="N/A",
-            sell_reason="N/A",
-        )
+            logger.error(f"AI 分析失败: {e}")
+            return AnalysisResult(
+                code=context.get("code", ""),
+                name=context.get("stock_name", ""),
+                date=context.get("date", ""),
+                sentiment_score=50,
+                operation_advice="人工复核",
+                risk_alert=str(e),
+                trend_prediction="不确定",
+                analysis_summary="AI 返回异常",
+            )
