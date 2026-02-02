@@ -161,16 +161,11 @@ class StockAnalysisPipeline:
     # ---------- 🟢 新增：合并 AI 研究观点 ----------
 
     def _merge_trendradar_into_context(self, context: dict, ai_text: Optional[str]) -> dict:
-        if not ai_text:
-            return context
-
-        enhanced_macro = (
-            context.get("macro", "")
-            + "\n\n【TrendRadar · AI 研究结论】\n"
-            + ai_text
-        )
-        context["macro"] = enhanced_macro
+    if not ai_text:
         return context
+
+    context["trendradar_ai"] = ai_text
+    return context
 
     # ---------- 技术指标 ----------
 
@@ -233,7 +228,21 @@ class StockAnalysisPipeline:
         trendradar_ai = self._load_trendradar_ai_summary()
         trend_context = self._merge_trendradar_into_context(trend_context, trendradar_ai)
 
-        prompt = self.analyzer.generate_cio_prompt(stock_info, tech_data, trend_context)
+        # --- 🟢 TrendRadar AI 作为独立研究结论注入 Prompt ---
+        extra_research = ""
+        if trend_context.get("trendradar_ai"):
+            extra_research = (
+                "\n\n=== TrendRadar · AI 研究结论（高权重） ===\n"
+                + trend_context["trendradar_ai"]
+                + "\n【说明】以上结论为跨市场、多源信息综合判断，应优先纳入交易决策。"
+            )
+
+base_prompt = self.analyzer.generate_cio_prompt(
+    stock_info, tech_data, trend_context
+)
+
+prompt = base_prompt + extra_research
+
 
         context = {
             "code": stock_code,
