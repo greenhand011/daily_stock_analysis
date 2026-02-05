@@ -17,11 +17,9 @@ on:
           - full
           - market-only
           - stocks-only
-      # === 新增：接收单次代码 ===
       stock_code:
         description: '临时分析代码(可选)'
         required: false
-      # ========================
 
 jobs:
   analyze:
@@ -58,26 +56,49 @@ jobs:
       
       - name: 执行股票分析
         env:
+          # ========== AI 模型配置 ==========
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_BASE_URL: https://api.deepseek.com/v1
+          OPENAI_MODEL: deepseek-chat
+          
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL || 'gemini-3-flash-preview' }}
           GEMINI_MODEL_FALLBACK: ${{ vars.GEMINI_MODEL_FALLBACK || secrets.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash' }}
           GEMINI_REQUEST_DELAY: '10.0'
+          
+          # ========== 编码设置 ==========
+          PYTHONIOENCODING: utf-8
+          LANG: C.UTF-8
+          LC_ALL: C.UTF-8
+          PYTHONUTF8: 1
+          
+          # ========== 数据源配置 ==========
           TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
           BOCHA_API_KEYS: ${{ secrets.BOCHA_API_KEYS }}
           TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
           SERPAPI_API_KEYS: ${{ secrets.SERPAPI_API_KEYS }}
+          
+          # ========== 通知渠道配置 ==========
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_FOLDER_TOKEN: ${{ secrets.FEISHU_FOLDER_TOKEN }}
+          
+          # ========== 系统配置 ==========
           STOCK_LIST: ${{ vars.STOCK_LIST || secrets.STOCK_LIST || '600519' }}
           LOG_LEVEL: INFO
           DATA_DAYS: 60
           MAX_CONCURRENT: 1
         run: |
+          # 设置编码环境
+          export PYTHONIOENCODING=utf-8
+          export LANG=C.UTF-8
+          export LC_ALL=C.UTF-8
+          export PYTHONUTF8=1
+          
           MODE="${{ github.event.inputs.mode || 'full' }}"
-          # === 获取临时代码 ===
           ONETIME_CODE="${{ github.event.inputs.stock_code }}"
           
           echo "=========================================="
@@ -91,13 +112,9 @@ jobs:
           fi
           echo "=========================================="
           
-          # === 逻辑判断 ===
-          # 1. 如果有临时代码，优先只跑这一只
           if [ -n "$ONETIME_CODE" ]; then
             echo "🎯 单次狙击模式: $ONETIME_CODE"
             python main.py --stocks "$ONETIME_CODE" --workers 1
-            
-          # 2. 否则按原有模式跑
           elif [ "$MODE" = "market-only" ]; then
             python main.py --market-review
           elif [ "$MODE" = "stocks-only" ]; then
