@@ -11,7 +11,7 @@ import time
 import os
 import sys
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from config import get_config
@@ -223,14 +223,30 @@ class DeepSeekAnalyzer:
         sector_news = safe_encode(trend_context.get("sector", "板块暂无重大消息"))
         target_sector = safe_encode(trend_context.get("target_sector", "通用"))
 
-        # 技术指标
-        ma5 = tech_data.get("ma5", "N/A")
-        ma20 = tech_data.get("ma20", "N/A")
-        ma60 = tech_data.get("ma60", "N/A")
-        rsi = tech_data.get("rsi", "N/A")
-        macd = tech_data.get("macd", "N/A")
-        support = tech_data.get("support", "N/A")
-        resistance = tech_data.get("resistance", "N/A")
+        # 辅助函数：格式化技术指标
+        def format_tech_value(value, default="N/A"):
+            if value is None:
+                return default
+            if isinstance(value, (int, float)):
+                # 根据值的大小选择合适的格式
+                if abs(value) < 0.001:  # 很小的值
+                    return f"{value:.6f}"
+                elif abs(value) < 1:    # 小数
+                    return f"{value:.4f}"
+                elif abs(value) < 1000: # 一般数值
+                    return f"{value:.2f}"
+                else:                   # 大数值
+                    return f"{value:.0f}"
+            return str(value)
+
+        # 格式化所有技术指标
+        ma5 = format_tech_value(tech_data.get("ma5"))
+        ma20 = format_tech_value(tech_data.get("ma20"))
+        ma60 = format_tech_value(tech_data.get("ma60"))
+        rsi = format_tech_value(tech_data.get("rsi"))
+        macd = format_tech_value(tech_data.get("macd"))
+        support = format_tech_value(tech_data.get("support"))
+        resistance = format_tech_value(tech_data.get("resistance"))
 
         prompt = f"""
 你是一位专业的 A 股首席投资官（CIO），拥有 20 年投资经验。
@@ -247,14 +263,14 @@ class DeepSeekAnalyzer:
 === 技术面分析（日线）===
 当前价格：{current_price:.2f}
 移动平均线：
-  - MA5（短期）：{ma5:.2f if isinstance(ma5, (int, float)) else ma5}
-  - MA20（中期）：{ma20:.2f if isinstance(ma20, (int, float)) else ma20}
-  - MA60（长期）：{ma60:.2f if isinstance(ma60, (int, float)) else ma60}
-相对强弱指数（RSI）：{rsi:.1f if isinstance(rsi, (int, float)) else rsi}
-MACD：{macd:.4f if isinstance(macd, (int, float)) else macd}
+  - MA5（短期）：{ma5}
+  - MA20（中期）：{ma20}
+  - MA60（长期）：{ma60}
+相对强弱指数（RSI）：{rsi}
+MACD：{macd}
 关键技术位：
-  - 支撑位：{support:.2f if isinstance(support, (int, float)) else support}
-  - 阻力位：{resistance:.2f if isinstance(resistance, (int, float)) else resistance}
+  - 支撑位：{support}
+  - 阻力位：{resistance}
 
 === 用户持仓情况 ===
 {position_context}
@@ -443,39 +459,3 @@ def create_analyzer(analyzer_type: str = "deepseek") -> DeepSeekAnalyzer:
     else:
         logger.warning(f"不支持的分析器类型: {analyzer_type}，使用默认DeepSeek分析器")
         return DeepSeekAnalyzer()
-
-# 测试代码
-if __name__ == "__main__":
-    # 设置日志
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s | %(levelname)-8s | %(name)-20s | %(message)s'
-    )
-    
-    # 测试分析器
-    print("测试DeepSeek分析器...")
-    
-    analyzer = DeepSeekAnalyzer()
-    
-    if analyzer.llm:
-        print("✅ 分析器初始化成功")
-        
-        # 测试连接
-        test_context = {
-            "code": "000001",
-            "stock_name": "平安银行",
-            "date": "2024-01-01"
-        }
-        
-        test_prompt = """
-        请分析平安银行（000001）的当前状况。
-        返回JSON格式：{"stock_name": "平安银行", "sentiment_score": 75, "operation_advice": "持有", "core_view": "基本面稳健", "analysis_summary": "测试分析", "risk_alert": "无", "trend_prediction": "震荡上行"}
-        """
-        
-        result = analyzer.analyze(test_context, test_prompt)
-        if result:
-            print(f"测试成功！情绪分数: {result.sentiment_score}")
-        else:
-            print("测试失败")
-    else:
-        print("❌ 分析器初始化失败")
