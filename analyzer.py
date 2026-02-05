@@ -32,11 +32,43 @@ class AnalysisResult:
         return "🟡"
 
 
+# ================= 工具函数 =================
+
+def safe_parse_json(text: str) -> Dict[str, Any]:
+    """
+    从 LLM 输出中尽可能提取合法 JSON
+    """
+    if not text:
+        raise ValueError("AI 返回内容为空")
+
+    text = str(text).strip()
+
+    # 1️⃣ 移除 markdown code block
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*", "", text)
+        text = re.sub(r"```$", "", text)
+        text = text.strip()
+
+    # 2️⃣ 尝试直接解析
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # 3️⃣ 提取第一个 JSON 对象
+    match = re.search(r"\{[\s\S]*\}", text)
+    if match:
+        return json.loads(match.group())
+
+    # 4️⃣ 彻底失败
+    raise ValueError("无法从 AI 输出中解析 JSON")
+
+
 # ================= Analyzer =================
 
 class GeminiAnalyzer:
     """
-    实际已升级为多模型 Analyzer：
+    多模型 Analyzer
     优先级：DeepSeek → Gemini
     """
 
@@ -45,7 +77,7 @@ class GeminiAnalyzer:
         self.llm = None
         self.backend = None
 
-        # ---------- 1️⃣ DeepSeek（首选） ----------
+        # ---------- 1️⃣ DeepSeek ----------
         if self.config.deepseek_api_key:
             try:
                 from openai import OpenAI
@@ -60,7 +92,7 @@ class GeminiAnalyzer:
             except Exception as e:
                 logger.warning(f"DeepSeek 初始化失败: {e}")
 
-        # ---------- 2️⃣ Gemini（备用） ----------
+        # ---------- 2️⃣ Gemini ----------
         if self.config.gemini_api_key:
             try:
                 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -77,9 +109,9 @@ class GeminiAnalyzer:
             except Exception as e:
                 logger.warning(f"Gemini 初始化失败: {e}")
 
-        logger.error("❌ 未能初始化任何 AI 模型，分析将被跳过")
+        logger.error("❌ 未能初始化任何 AI 模型")
 
-    # ---------- Prompt 生成 ----------
+    # ---------- Prompt ----------
 
     def generate_cio_prompt(
         self,
@@ -128,7 +160,7 @@ MACD：{tech_data.get("macd")}
 {position_context}
 
 === 输出要求 ===
-仅返回 JSON，不要 Markdown：
+【只】返回 JSON，不要解释，不要 Markdown：
 {{
   "stock_name": "{stock_name}",
   "sentiment_score": 0-100,
@@ -146,33 +178,29 @@ MACD：{tech_data.get("macd")}
         self,
         context: Dict[str, Any],
         custom_prompt: Optional[str] = None,
-    ) -> Optional[AnalysisResult]:
-
-        if not self.llm or not self.backend:
-            return None
+    ) -> AnalysisResult:
 
         try:
+            if not self.llm or not self.backend:
+                raise RuntimeError("AI 引擎未初始化")
+
+            prompt = custom_prompt or ""
+
             # ===== DeepSeek =====
             if self.backend == "deepseek":
                 resp = self.llm.chat.completions.create(
                     model=self.config.deepseek_model,
-                    messages=[{"role": "user", "content": custom_prompt}],
+                    messages=[{"role": "user", "content": prompt}],
                     temperature=0.2,
                 )
-                content = resp.choices[0].message.content
+                raw_content = resp.choices[0].message.content
 
             # ===== Gemini =====
             else:
-                result = self.llm.invoke(custom_prompt)
-                content = result.content
+                result = self.llm.invoke(prompt)
+                raw_content = result.content
 
-            # ---------- JSON 清洗 ----------
-            content = str(content).replace("```json", "").replace("```", "").strip()
-            match = re.search(r"\{.*\}", content, re.DOTALL)
-            if match:
-                content = match.group(0)
-
-            data = json.loads(content)
+            data = safe_parse_json(raw_content)
 
             score = int(data.get("sentiment_score", 50))
             score = max(0, min(100, score))
@@ -201,5 +229,5 @@ MACD：{tech_data.get("macd")}
                 operation_advice="人工复核",
                 risk_alert=str(e),
                 trend_prediction="不确定",
-                analysis_summary="AI 返回异常",
+                analysis_summary="AI 返回异常，已跳过",
             )
