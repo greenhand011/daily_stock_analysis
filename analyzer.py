@@ -193,62 +193,55 @@ class DeepSeekAnalyzer:
     # ================= Prompt 生成 =================
 
     def generate_cio_prompt(
-        self,
-        stock_info: Dict[str, Any],
-        tech_data: Dict[str, Any],
-        trend_context: Dict[str, Any],
-    ) -> str:
-        """生成首席投资官提示词"""
+    self,
+    stock_info: Dict[str, Any],
+    tech_data: Dict[str, Any],
+    trend_context: Dict[str, Any],
+) -> str:
+    """生成首席投资官提示词"""
 
-        stock_name = safe_encode(stock_info.get("name", "未知股票"))
-        stock_code = stock_info.get("code", "Unknown")
+    stock_name = safe_encode(stock_info.get("name", "未知股票"))
+    stock_code = stock_info.get("code", "Unknown")
 
-        cost = float(stock_info.get("cost", 0))
-        shares = int(stock_info.get("shares", 0))
-        current_price = float(tech_data.get("price", 0))
+    cost = float(stock_info.get("cost", 0))
+    shares = int(stock_info.get("shares", 0))
+    current_price = float(tech_data.get("price", 0))
 
-        # 持仓上下文
-        if shares > 0 and cost > 0 and current_price > 0:
-            profit_pct = (current_price - cost) / cost * 100
-            profit_status = "盈利" if profit_pct > 0 else "亏损"
-            position_context = (
-                f"用户持仓 {shares} 股，成本 {cost:.2f} 元，当前价格 {current_price:.2f} 元，"
-                f"当前{profit_status} {abs(profit_pct):.2f}%。"
-            )
-        else:
-            position_context = "用户当前为空仓，请评估安全边际与建仓方式。"
+    # 持仓上下文
+    if shares > 0 and cost > 0 and current_price > 0:
+        profit_pct = (current_price - cost) / cost * 100
+        profit_status = "盈利" if profit_pct > 0 else "亏损"
+        position_context = (
+            f"用户持仓 {shares} 股，成本 {cost:.2f} 元，当前价格 {current_price:.2f} 元，"
+            f"当前{profit_status} {abs(profit_pct):.2f}%。"
+        )
+    else:
+        position_context = "用户当前为空仓，请评估安全边际与建仓方式。"
 
-        # 新闻上下文
-        macro_news = safe_encode(trend_context.get("macro", "当前宏观面平静"))
-        sector_news = safe_encode(trend_context.get("sector", "板块暂无重大消息"))
-        target_sector = safe_encode(trend_context.get("target_sector", "通用"))
+    # 新闻上下文
+    macro_news = safe_encode(trend_context.get("macro", "当前宏观面平静"))
+    sector_news = safe_encode(trend_context.get("sector", "板块暂无重大消息"))
+    target_sector = safe_encode(trend_context.get("target_sector", "通用"))
 
-        # 辅助函数：格式化技术指标
-        def format_tech_value(value, default="N/A"):
-            if value is None:
-                return default
-            if isinstance(value, (int, float)):
-                # 根据值的大小选择合适的格式
-                if abs(value) < 0.001:  # 很小的值
-                    return f"{value:.6f}"
-                elif abs(value) < 1:    # 小数
-                    return f"{value:.4f}"
-                elif abs(value) < 1000: # 一般数值
-                    return f"{value:.2f}"
-                else:                   # 大数值
-                    return f"{value:.0f}"
-            return str(value)
+    # 简化格式化：直接转换为字符串，不进行复杂的条件格式化
+    def simple_format(value):
+        if value is None:
+            return "N/A"
+        if isinstance(value, (int, float)):
+            # 简单的格式化，避免复杂逻辑
+            return f"{value:.2f}"
+        return str(value)
 
-        # 格式化所有技术指标
-        ma5 = format_tech_value(tech_data.get("ma5"))
-        ma20 = format_tech_value(tech_data.get("ma20"))
-        ma60 = format_tech_value(tech_data.get("ma60"))
-        rsi = format_tech_value(tech_data.get("rsi"))
-        macd = format_tech_value(tech_data.get("macd"))
-        support = format_tech_value(tech_data.get("support"))
-        resistance = format_tech_value(tech_data.get("resistance"))
+    # 格式化技术指标
+    ma5_str = simple_format(tech_data.get("ma5"))
+    ma20_str = simple_format(tech_data.get("ma20"))
+    ma60_str = simple_format(tech_data.get("ma60"))
+    rsi_str = simple_format(tech_data.get("rsi"))
+    macd_str = simple_format(tech_data.get("macd"))
+    support_str = simple_format(tech_data.get("support"))
+    resistance_str = simple_format(tech_data.get("resistance"))
 
-        prompt = f"""
+    prompt = f"""
 你是一位专业的 A 股首席投资官（CIO），拥有 20 年投资经验。
 
 请基于以下三方面信息，对 {stock_name}（{stock_code}）给出明确的交易决策：
@@ -263,14 +256,14 @@ class DeepSeekAnalyzer:
 === 技术面分析（日线）===
 当前价格：{current_price:.2f}
 移动平均线：
-  - MA5（短期）：{ma5}
-  - MA20（中期）：{ma20}
-  - MA60（长期）：{ma60}
-相对强弱指数（RSI）：{rsi}
-MACD：{macd}
+  - MA5（短期）：{ma5_str}
+  - MA20（中期）：{ma20_str}
+  - MA60（长期）：{ma60_str}
+相对强弱指数（RSI）：{rsi_str}
+MACD：{macd_str}
 关键技术位：
-  - 支撑位：{support}
-  - 阻力位：{resistance}
+  - 支撑位：{support_str}
+  - 阻力位：{resistance_str}
 
 === 用户持仓情况 ===
 {position_context}
@@ -290,7 +283,7 @@ MACD：{macd}
 请确保只返回有效的JSON格式，不要包含其他解释性文字。
 """
 
-        return prompt
+    return prompt
 
     # ================= 核心分析（带重试） =================
 
