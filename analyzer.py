@@ -228,5 +228,5 @@ MACD：{tech_data.get("macd")}
                 trend_prediction="不确定",
                 analysis_summary="AI 返回异常",
             )
-            # === 向后兼容（CI / 旧代码仍然 import GeminiAnalyzer）===
-    GeminiAnalyzer = MultiModelAnalyzer
+# === 向后兼容（CI / 旧代码仍然 import GeminiAnalyzer）===
+GeminiAnalyzer = MultiModelAnalyzer
