@@ -32,70 +32,33 @@ class AnalysisResult:
         return "🟡"
 
 
-# ================= Analyzer =================
+# ================= DeepSeek Analyzer =================
 
-class MultiModelAnalyzer:
+class DeepSeekAnalyzer:
     """
-    多模型 Analyzer
-    优先级：
-    1️⃣ DeepSeek（OpenAI-compatible）
-    2️⃣ Gemini
-    3️⃣ OpenAI-compatible（兜底）
+    单一 DeepSeek Analyzer（无 fallback，CI 稳定）
     """
 
     def __init__(self):
         self.config = get_config()
         self.llm = None
-        self.backend = None
 
-        # ---------- 1️⃣ DeepSeek ----------
-        if self.config.deepseek_api_key:
-            try:
-                from openai import OpenAI
+        if not self.config.deepseek_api_key:
+            logger.error("❌ 未配置 DEEPSEEK_API_KEY")
+            return
 
-                self.llm = OpenAI(
-                    api_key=self.config.deepseek_api_key,
-                    base_url="https://api.deepseek.com/v1",
-                )
-                self.backend = "deepseek"
-                logger.info("✅ 使用 DeepSeek 作为 AI 分析引擎")
-                return
-            except Exception as e:
-                logger.warning(f"DeepSeek 初始化失败: {e}")
+        try:
+            from openai import OpenAI
 
-        # ---------- 2️⃣ Gemini ----------
-        if self.config.gemini_api_key:
-            try:
-                from langchain_google_genai import ChatGoogleGenerativeAI
+            self.llm = OpenAI(
+                api_key=self.config.deepseek_api_key,
+                base_url="https://api.deepseek.com/v1",
+            )
+            logger.info("✅ 使用 DeepSeek 作为唯一 AI 分析引擎")
 
-                self.llm = ChatGoogleGenerativeAI(
-                    model=self.config.gemini_model,
-                    google_api_key=self.config.gemini_api_key,
-                    temperature=0.2,
-                    timeout=120,
-                )
-                self.backend = "gemini"
-                logger.info("⚠️ 回退使用 Gemini 作为 AI 分析引擎")
-                return
-            except Exception as e:
-                logger.warning(f"Gemini 初始化失败: {e}")
-
-        # ---------- 3️⃣ OpenAI-compatible ----------
-        if self.config.openai_api_key:
-            try:
-                from openai import OpenAI
-
-                self.llm = OpenAI(
-                    api_key=self.config.openai_api_key,
-                    base_url=self.config.openai_base_url,
-                )
-                self.backend = "openai"
-                logger.info("⚠️ 回退使用 OpenAI-compatible 模型")
-                return
-            except Exception as e:
-                logger.warning(f"OpenAI 初始化失败: {e}")
-
-        logger.error("❌ 未能初始化任何 AI 模型，分析将被跳过")
+        except Exception as e:
+            logger.error(f"❌ DeepSeek 初始化失败: {e}")
+            self.llm = None
 
     # ================= Prompt =================
 
@@ -166,33 +129,20 @@ MACD：{tech_data.get("macd")}
         custom_prompt: str,
     ) -> Optional[AnalysisResult]:
 
-        if not self.llm or not self.backend:
+        if not self.llm:
             return None
 
         try:
-            # ===== DeepSeek / OpenAI-compatible =====
-            if self.backend in ("deepseek", "openai"):
-                model = (
-                    self.config.deepseek_model
-                    if self.backend == "deepseek"
-                    else self.config.openai_model
-                )
+            resp = self.llm.chat.completions.create(
+                model=self.config.deepseek_model,
+                messages=[{"role": "user", "content": custom_prompt}],
+                temperature=0.2,
+            )
 
-                resp = self.llm.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": custom_prompt}],
-                    temperature=0.2,
-                )
-                content = resp.choices[0].message.content
-
-            # ===== Gemini =====
-            else:
-                result = self.llm.invoke(custom_prompt)
-                content = result.content
-
-            # ---------- JSON 清洗 ----------
+            content = resp.choices[0].message.content
             content = str(content).strip()
             content = content.replace("```json", "").replace("```", "")
+
             match = re.search(r"\{.*\}", content, re.DOTALL)
             if match:
                 content = match.group(0)
@@ -228,5 +178,7 @@ MACD：{tech_data.get("macd")}
                 trend_prediction="不确定",
                 analysis_summary="AI 返回异常",
             )
-# === 向后兼容（CI / 旧代码仍然 import GeminiAnalyzer）===
-GeminiAnalyzer = MultiModelAnalyzer
+
+
+# === 向后兼容（旧代码仍然 import GeminiAnalyzer）===
+GeminiAnalyzer = DeepSeekAnalyzer
