@@ -15,7 +15,7 @@ tushare>=1.4.0              # Priority 2: 挖地兔 Pro API
 baostock>=0.8.0             # Priority 3: 证券宝数据
 yfinance>=0.2.0             # Priority 4: Yahoo Finance (Fallback)
 
-#飞书
+# 飞书
 lark-oapi>=1.0.0             # 飞书API
 
 # 数据处理
@@ -24,7 +24,10 @@ numpy>=1.24.0               # 数值计算
 
 # AI 分析
 google-generativeai>=0.8.0  # Gemini API
-openai>=1.0.0               # OpenAI 兼容 API（可选，支持 DeepSeek/通义千问等）
+openai>=1.0.0               # OpenAI 兼容 API（支持 DeepSeek/通义千问/Moonshot-Kimi/智谱GLM 等）
+tiktoken>=0.5.0             # OpenAI 令牌计数（可选，用于精确计费）
+anthropic>=0.8.0            # Claude API（可选）
+cohere>=4.0.0               # Cohere API（可选）
 
 # 搜索引擎（用于获取股票新闻）
 tavily-python>=0.3.0        # Tavily 搜索 API（每月 1000 次免费）
@@ -33,12 +36,25 @@ google-search-results>=2.4.0  # SerpAPI（每月 100 次免费）
 # 网络请求
 requests>=2.31.0            # HTTP 请求
 fake-useragent>=1.4.0       # 随机 User-Agent 防封禁
-httpx[socks]                # HTTP 客户端 + SOCKS 代理支持（OpenAI 可选依赖）
+httpx[socks]>=0.25.0        # HTTP 客户端 + SOCKS 代理支持（OpenAI 可选依赖）
 
 # 数据库
 # SQLite 是 Python 内置，无需额外安装
-langchain-google-genai
-langchain
+langchain-google-genai>=0.0.10
+langchain>=0.1.0
+langchain-openai>=0.0.5     # OpenAI 兼容模型的 LangChain 支持
 
-#编码支持包
+# 编码支持包
 chardet>=5.0.0
+
+# 可选：国产模型专用SDK（如果需要直接调用）
+# deepseek>=0.1.0           # DeepSeek 官方SDK（如果不用OpenAI兼容模式）
+# zhipuai>=2.0.0            # 智谱GLM官方SDK
+# dashscope>=1.14.0         # 阿里通义千问SDK
+# qianfan>=0.3.0            # 百度文心一言SDK
+# moonshot>=0.1.0           # Moonshot/Kimi官方SDK
+
+# 其他工具
+python-multipart>=0.0.6     # 文件上传支持（WebUI用）
+fastapi>=0.104.0            # WebUI框架（可选）
+uvicorn[standard]>=0.24.0   # ASGI服务器（可选）
