@@ -87,7 +87,8 @@ jobs:
           FEISHU_FOLDER_TOKEN: ${{ secrets.FEISHU_FOLDER_TOKEN }}
           
           # ========== 系统配置 ==========
-          STOCK_LIST: ${{ vars.STOCK_LIST || secrets.STOCK_LIST || '600519' }}
+          # 注释掉这一行，系统将使用 portfolio.json
+          # STOCK_LIST: ${{ vars.STOCK_LIST || secrets.STOCK_LIST || '600519' }}
           LOG_LEVEL: INFO
           DATA_DAYS: 60
           MAX_CONCURRENT: 1
