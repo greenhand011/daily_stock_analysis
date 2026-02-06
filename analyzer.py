@@ -200,12 +200,12 @@ class DeepSeekAnalyzer:
 ) -> str:
     """生成首席投资官提示词"""
 
-    stock_name = safe_encode(stock_info.get("name", "未知股票"))
-    stock_code = stock_info.get("code", "Unknown")
-
-    cost = float(stock_info.get("cost", 0))
-    shares = int(stock_info.get("shares", 0))
-    current_price = float(tech_data.get("price", 0))
+        stock_name = safe_encode(stock_info.get("name", "未知股票"))
+        stock_code = stock_info.get("code", "Unknown")
+    
+        cost = float(stock_info.get("cost", 0))
+        shares = int(stock_info.get("shares", 0))
+        current_price = float(tech_data.get("price", 0))
 
     # 持仓上下文
     if shares > 0 and cost > 0 and current_price > 0:
