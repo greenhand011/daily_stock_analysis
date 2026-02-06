@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-AI 分析引擎 - 支持 DeepSeek
+AI 分析引擎 - DeepSeek 分析器
 """
 
 import logging
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AnalysisResult:
+    """分析结果数据结构"""
     code: str
     name: str
     date: str
@@ -34,11 +35,13 @@ class AnalysisResult:
     sell_reason: str = ""
 
     def get_emoji(self):
+        """根据情绪分数返回表情符号"""
         if self.sentiment_score >= 80:
             return "🔴"
         if self.sentiment_score <= 40:
             return "🟢"
         return "🟡"
+
 
 # ================= DeepSeek Analyzer =================
 
@@ -46,18 +49,15 @@ class DeepSeekAnalyzer:
     """DeepSeek 分析引擎"""
 
     def __init__(self):
+        """初始化分析器"""
         self.config = get_config()
         self.llm = None
         self.model_name = "deepseek-chat"
         
-        self._initialize_client()
-
-    def _initialize_client(self):
-        """初始化 AI 客户端"""
         try:
             from openai import OpenAI
             
-            # 检查 API 密钥
+            # 获取 API 密钥
             api_key = None
             base_url = "https://api.deepseek.com/v1"
             
@@ -90,49 +90,42 @@ class DeepSeekAnalyzer:
             logger.info(f"✅ DeepSeek 分析引擎初始化完成，使用模型: {self.model_name}")
             
         except ImportError:
-            logger.error("❌ 未安装 openai 包，请运行: pip install openai>=1.0.0")
+            logger.error("❌ 未安装 openai 包")
         except Exception as e:
             logger.error(f"❌ DeepSeek 初始化失败: {e}")
 
-    def generate_cio_prompt(
-        self,
-        stock_info: Dict[str, Any],
-        tech_data: Dict[str, Any],
-        trend_context: Dict[str, Any],
-    ) -> str:
+    def generate_cio_prompt(self, stock_info, tech_data, trend_context):
         """生成首席投资官提示词"""
-        
+        # 获取股票信息
         stock_name = stock_info.get("name", "未知股票")
         stock_code = stock_info.get("code", "Unknown")
-
+        
+        # 持仓信息
         cost = float(stock_info.get("cost", 0))
         shares = int(stock_info.get("shares", 0))
         current_price = float(tech_data.get("price", 0))
-
+        
         # 持仓上下文
         if shares > 0 and cost > 0 and current_price > 0:
             profit_pct = (current_price - cost) / cost * 100
             profit_status = "盈利" if profit_pct > 0 else "亏损"
-            position_context = (
-                f"用户持仓 {shares} 股，成本 {cost:.2f} 元，当前价格 {current_price:.2f} 元，"
-                f"当前{profit_status} {abs(profit_pct):.2f}%。"
-            )
+            position_context = f"用户持仓 {shares} 股，成本 {cost:.2f} 元，当前价格 {current_price:.2f} 元，当前{profit_status} {abs(profit_pct):.2f}%。"
         else:
             position_context = "用户当前为空仓，请评估安全边际与建仓方式。"
-
+        
         # 新闻上下文
         macro_news = trend_context.get("macro", "当前宏观面平静")
         sector_news = trend_context.get("sector", "板块暂无重大消息")
         target_sector = trend_context.get("target_sector", "通用")
-
+        
         # 格式化技术指标
-        def format_value(value):
-            if value is None:
+        def format_value(val):
+            if val is None:
                 return "N/A"
-            if isinstance(value, (int, float)):
-                return f"{value:.2f}"
-            return str(value)
-
+            if isinstance(val, (int, float)):
+                return f"{val:.2f}"
+            return str(val)
+        
         ma5 = format_value(tech_data.get("ma5"))
         ma20 = format_value(tech_data.get("ma20"))
         ma60 = format_value(tech_data.get("ma60"))
@@ -140,7 +133,8 @@ class DeepSeekAnalyzer:
         macd = format_value(tech_data.get("macd"))
         support = format_value(tech_data.get("support"))
         resistance = format_value(tech_data.get("resistance"))
-
+        
+        # 构建提示词
         prompt = f"""
 你是一位专业的 A 股首席投资官（CIO），拥有 20 年投资经验。
 
@@ -182,11 +176,11 @@ MACD：{macd}
 
 请确保只返回有效的JSON格式，不要包含其他解释性文字。
 """
-
+        
         return prompt
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    def _call_ai_api(self, prompt: str) -> Optional[str]:
+    def _call_ai_api(self, prompt):
         """调用AI API（带重试机制）"""
         if not self.llm:
             raise ValueError("AI客户端未初始化")
@@ -208,19 +202,16 @@ MACD：{macd}
             logger.warning(f"AI API调用失败，将重试: {e}")
             raise
 
-    def analyze(self, context: Dict[str, Any], custom_prompt: str = None) -> Optional[AnalysisResult]:
+    def analyze(self, context, custom_prompt=None):
         """分析股票数据"""
-        
         if not self.llm:
             logger.error("AI客户端未初始化，无法进行分析")
             return self._create_error_result(context, "AI客户端未初始化")
 
         try:
-            # 使用自定义提示词
             if not custom_prompt:
                 return self._create_error_result(context, "未提供分析提示词")
             
-            # 调用AI API
             logger.info(f"开始AI分析，股票: {context.get('code', '未知')}")
             start_time = time.time()
             
@@ -247,7 +238,7 @@ MACD：{macd}
             logger.error(f"AI分析过程失败: {e}")
             return self._create_error_result(context, str(e))
 
-    def _parse_ai_response(self, ai_response: str, context: Dict[str, Any]) -> Optional[AnalysisResult]:
+    def _parse_ai_response(self, ai_response, context):
         """解析AI返回的响应"""
         try:
             # 提取JSON
@@ -274,7 +265,7 @@ MACD：{macd}
                 score = max(0, min(100, score))
             except:
                 score = 50
-                logger.warning(f"情绪分数解析失败，使用默认值50")
+                logger.warning("情绪分数解析失败，使用默认值50")
             
             # 获取股票名称
             stock_name = data.get("stock_name", "")
@@ -302,7 +293,7 @@ MACD：{macd}
             logger.error(f"解析AI响应时出错: {e}")
             return None
 
-    def _create_error_result(self, context: Dict[str, Any], error_msg: str) -> AnalysisResult:
+    def _create_error_result(self, context, error_msg):
         """创建错误结果"""
         return AnalysisResult(
             code=context.get("code", ""),
@@ -314,6 +305,7 @@ MACD：{macd}
             trend_prediction="不确定",
             analysis_summary="AI分析失败，需要人工检查",
         )
+
 
 # ================= 向后兼容 =================
 
