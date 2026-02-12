@@ -43,17 +43,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
-      
+          cache: 'pip'          # ✅ 自动缓存 pip 依赖
+
       - name: 安装依赖
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
-      
+          pip install -r requirements.txt   # ⚠️ 请确保包含 tencent-stock-api
+
       - name: 创建必要目录
         run: |
           mkdir -p data logs reports output
-      
+
       - name: 执行股票分析
         env:
           # ========== AI 模型配置 ==========
@@ -61,7 +61,6 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           OPENAI_BASE_URL: https://api.deepseek.com/v1
           OPENAI_MODEL: deepseek-chat
-          
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL || 'gemini-3-flash-preview' }}
           GEMINI_MODEL_FALLBACK: ${{ vars.GEMINI_MODEL_FALLBACK || secrets.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash' }}
@@ -93,12 +92,7 @@ jobs:
           DATA_DAYS: 60
           MAX_CONCURRENT: 1
         run: |
-          # 设置编码环境
-          export PYTHONIOENCODING=utf-8
-          export LANG=C.UTF-8
-          export LC_ALL=C.UTF-8
-          export PYTHONUTF8=1
-          
+          # 环境变量已在 env 块定义，无需重复 export
           MODE="${{ github.event.inputs.mode || 'full' }}"
           ONETIME_CODE="${{ github.event.inputs.stock_code }}"
           
@@ -115,13 +109,13 @@ jobs:
           
           if [ -n "$ONETIME_CODE" ]; then
             echo "🎯 单次狙击模式: $ONETIME_CODE"
-            python main.py --stocks "$ONETIME_CODE" --workers 1
+            python main.py --stocks "$ONETIME_CODE"    # ✅ 去掉 --workers 1
           elif [ "$MODE" = "market-only" ]; then
             python main.py --market-review
           elif [ "$MODE" = "stocks-only" ]; then
-            python main.py --workers 1
+            python main.py                               # ✅ 去掉 --workers 1
           else
-            python main.py --workers 1
+            python main.py                               # ✅ 去掉 --workers 1
           fi
       
       - name: 上传分析报告
