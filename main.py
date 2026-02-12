@@ -8,6 +8,8 @@ AI-CIO 多资产智能分析系统
 - 历史K线
 - Gemini AI 分析
 - Telegram 推送
+
+增强健壮性：单个数据源/组件失败不影响整体运行
 """
 
 import os
@@ -25,7 +27,6 @@ from pathlib import Path
 from typing import List, Dict, Optional
 
 # ================= 编码修复 =================
-
 try:
     import codecs
     if sys.stdout.encoding != "UTF-8" and hasattr(sys.stdout, "buffer"):
@@ -37,13 +38,51 @@ except:
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
-# ================= 核心模块 =================
+# ================= 核心模块导入（带降级处理）=================
 
 from config import get_config, Config
 from storage import get_db
-from data_provider import DataFetcherManager
-from analyzer import GeminiAnalyzer, AnalysisResult
-from notification import NotificationService
+
+# ---------- 数据源管理器：尝试初始化，失败则降级 ----------
+try:
+    from data_provider import DataFetcherManager
+    _fetcher_manager = DataFetcherManager()
+    logger = logging.getLogger(__name__)
+    logger.info("✅ DataFetcherManager 初始化成功")
+except Exception as e:
+    logger = logging.getLogger(__name__)
+    logger.error(f"❌ DataFetcherManager 初始化失败: {e}，将使用降级数据源")
+    # 降级方案：创建一个仅包含基本 fetcher 的管理器
+    try:
+        from data_provider.efinance_fetcher import EfinanceFetcher
+        from data_provider.akshare_fetcher import AkshareFetcher
+        from data_provider.base import DataFetcherManager
+        _fetcher_manager = DataFetcherManager(fetchers=[
+            EfinanceFetcher(),
+            AkshareFetcher(),
+        ])
+    except Exception as e2:
+        logger.error(f"❌ 降级数据源也失败: {e2}，将无法获取历史数据")
+        _fetcher_manager = None
+
+# ---------- AI 分析器：尝试初始化，失败则标记不可用 ----------
+try:
+    from analyzer import GeminiAnalyzer, AnalysisResult
+    _analyzer = GeminiAnalyzer()
+except Exception as e:
+    logger.error(f"❌ GeminiAnalyzer 初始化失败: {e}，AI分析功能不可用")
+    GeminiAnalyzer = None
+    AnalysisResult = None
+    _analyzer = None
+
+# ---------- 通知服务：尝试初始化，失败则标记不可用 ----------
+try:
+    from notification import NotificationService
+    _notifier = NotificationService()
+except Exception as e:
+    logger.error(f"❌ NotificationService 初始化失败: {e}，推送功能不可用")
+    NotificationService = None
+    _notifier = None
 
 # ================= 日志配置 =================
 
@@ -90,11 +129,16 @@ class StockAnalysisPipeline:
 
         self.portfolio = self._load_portfolio_config()
         self.db = get_db()
-        self.fetcher_manager = DataFetcherManager()
-        self.analyzer = GeminiAnalyzer()
-        self.notifier = NotificationService()
+        self.fetcher_manager = _fetcher_manager      # 使用全局降级后的管理器
+        self.analyzer = _analyzer                    # 可能为 None
+        self.notifier = _notifier                   # 可能为 None
 
-        logger.info("✅ AI-CIO 初始化完成（含腾讯行情）")
+        if self.analyzer is None:
+            logger.warning("⚠️ AI分析器未初始化，将跳过AI分析")
+        if self.notifier is None:
+            logger.warning("⚠️ 通知服务未初始化，将跳过推送")
+
+        logger.info("✅ AI-CIO 初始化完成（降级模式可能已启用）")
 
     # ---------- 加载持仓 ----------
 
@@ -118,7 +162,7 @@ class StockAnalysisPipeline:
 
         path = "portfolio.json"
         if not os.path.exists(path):
-            logger.warning("未找到 portfolio.json")
+            logger.warning("未找到 portfolio.json，将使用空持仓")
             return {}
 
         try:
@@ -145,7 +189,6 @@ class StockAnalysisPipeline:
     # ---------- 技术指标 ----------
 
     def _calculate_technical_indicators(self, df: pd.DataFrame) -> dict:
-
         df = df.sort_values("date")
         close = df["close"]
 
@@ -162,7 +205,7 @@ class StockAnalysisPipeline:
 
     # ---------- 单资产处理 ----------
 
-    def process_single_stock(self, code: str) -> Optional[AnalysisResult]:
+    def process_single_stock(self, code: str) -> Optional[object]:
         """
         处理单个资产分析流程
         :param code: 股票代码（可带前缀，如 'sz000858'；也可纯数字）
@@ -173,68 +216,75 @@ class StockAnalysisPipeline:
             logger.warning(f"无效代码: {raw_code}")
             return None
 
-        # 6位数字代码，用于查找持仓配置
         asset_code = match.group(0)
         logger.info(f"========== 处理资产: {asset_code} (原始: {raw_code}) ==========")
 
+        # ---------- 1. 腾讯实时行情（独立导入，异常不影响主流程）----------
+        realtime_data = {}
         try:
-            # ---------- 1. 腾讯实时行情 ----------
-            try:
-                from data_provider.tencent_fetcher import TencentFetcher
-                tencent = TencentFetcher()
-                realtime_data = tencent.get_realtime_quote(raw_code) or {}
-                if realtime_data.get("name"):
-                    logger.info(f"腾讯行情获取成功: {realtime_data['name']}")
-            except Exception as e:
-                logger.warning(f"腾讯行情获取失败: {e}")
-                realtime_data = {}
+            # 延迟导入，避免初始化阶段强制依赖
+            from data_provider.tencent_fetcher import TencentFetcher
+            tencent = TencentFetcher()
+            realtime_data = tencent.get_realtime_quote(raw_code) or {}
+            if realtime_data.get("name"):
+                logger.info(f"腾讯行情获取成功: {realtime_data['name']}")
+        except ImportError:
+            logger.debug("TencentFetcher 未安装或不存在，跳过腾讯实时行情")
+        except Exception as e:
+            logger.warning(f"腾讯行情获取失败: {e}")
 
-            # ---------- 2. 历史K线数据 ----------
-            df = None
+        # ---------- 2. 历史K线数据 ----------
+        df = None
+        source = None
+        if self.fetcher_manager is not None:
             try:
-                # 使用 6 位数字代码获取历史数据（DataFetcherManager 内部会自动适配前缀）
                 df, source = self.fetcher_manager.get_daily_data(asset_code, days=120)
                 logger.info(f"历史数据源: {source}")
             except Exception as e:
                 logger.warning(f"历史数据获取失败: {e}")
+        else:
+            logger.warning("数据源管理器不可用，无法获取历史数据")
 
-            # ---------- 3. 资产基础信息 ----------
-            stock_info = self.portfolio.get(
-                asset_code,
-                {
-                    "name": f"资产{asset_code}",
-                    "sector": DEFAULT_SECTOR,
-                    "cost": 0,
-                    "shares": 0,
-                }
-            )
-            stock_info["code"] = asset_code
+        # ---------- 3. 资产基础信息 ----------
+        stock_info = self.portfolio.get(
+            asset_code,
+            {
+                "name": f"资产{asset_code}",
+                "sector": DEFAULT_SECTOR,
+                "cost": 0,
+                "shares": 0,
+            }
+        )
+        stock_info["code"] = asset_code
 
-            # 用实时行情中的名称覆盖（如果有）
-            if realtime_data.get("name"):
-                stock_info["name"] = realtime_data["name"]
+        if realtime_data.get("name"):
+            stock_info["name"] = realtime_data["name"]
 
-            # ---------- 4. 技术指标 ----------
-            if df is not None and not df.empty:
-                tech_data = self._calculate_technical_indicators(df)
-            else:
-                logger.warning("无历史K线，使用最小技术结构")
-                tech_data = {
-                    "price": realtime_data.get("price", 0),
-                    "ma5": None,
-                    "ma20": None,
-                    "ma60": None,
-                    "rsi": None,
-                    "macd": None,
-                    "support": None,
-                    "resistance": None,
-                }
+        # ---------- 4. 技术指标 ----------
+        if df is not None and not df.empty:
+            tech_data = self._calculate_technical_indicators(df)
+        else:
+            logger.warning("无历史K线，使用最小技术结构")
+            tech_data = {
+                "price": realtime_data.get("price", 0),
+                "ma5": None,
+                "ma20": None,
+                "ma60": None,
+                "rsi": None,
+                "macd": None,
+                "support": None,
+                "resistance": None,
+            }
 
-            # 用腾讯实时价格覆盖技术指标中的价格
-            if realtime_data.get("price") is not None:
-                tech_data["price"] = realtime_data["price"]
+        if realtime_data.get("price") is not None:
+            tech_data["price"] = realtime_data["price"]
 
-            # ---------- 5. 构建提示词并调用 AI 分析 ----------
+        # ---------- 5. AI 分析（如果分析器可用）----------
+        if self.analyzer is None:
+            logger.warning("AI分析器不可用，跳过分析")
+            return None
+
+        try:
             base_prompt = self.analyzer.generate_cio_prompt(
                 stock_info,
                 tech_data,
@@ -249,15 +299,13 @@ class StockAnalysisPipeline:
 
             result = self.analyzer.analyze(context, custom_prompt=base_prompt)
             return result
-
         except Exception as e:
-            logger.error(f"处理资产 {asset_code} 失败: {e}", exc_info=True)
+            logger.error(f"AI分析失败: {e}", exc_info=True)
             return None
 
     # ---------- 主执行 ----------
 
     def run(self, stock_codes: Optional[List[str]] = None):
-
         if not stock_codes:
             stock_codes = list(self.portfolio.keys())
 
@@ -267,13 +315,15 @@ class StockAnalysisPipeline:
             res = self.process_single_stock(code)
             if res:
                 results.append(res)
-
             time.sleep(5)
 
-        if results:
-            report = self.notifier.generate_dashboard_report(results)
-            if report and self.notifier.is_available():
-                self.notifier.send_to_telegram(report)
+        if results and self.notifier is not None:
+            try:
+                report = self.notifier.generate_dashboard_report(results)
+                if report and self.notifier.is_available():
+                    self.notifier.send_to_telegram(report)
+            except Exception as e:
+                logger.error(f"推送报告失败: {e}")
 
         return results
 
@@ -288,14 +338,12 @@ def parse_args():
 
 
 def main():
-
     args = parse_args()
     setup_logging(args.debug)
 
     logger.info("🚀 启动 AI-CIO 多资产分析系统")
 
     try:
-
         pipeline = StockAnalysisPipeline()
 
         stock_codes = []
@@ -305,7 +353,6 @@ def main():
             ]
 
         results = pipeline.run(stock_codes)
-
         logger.info(f"🎉 分析完成，共 {len(results)} 个结果")
         return 0
 
