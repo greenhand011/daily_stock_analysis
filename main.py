@@ -130,6 +130,18 @@ class StockAnalysisPipeline:
         return {}
 
     # ---------- 技术指标 ----------
+    if df is None or df.empty:
+        logger.warning("无历史K线，使用实时价格构建最小技术结构")
+        tech_data = {
+            "price": realtime_data.get("price", 0),
+            "ma5": None,
+            "ma20": None,
+            "ma60": None,
+            "rsi": None,
+            "macd": None,
+            "support": None,
+            "resistance": None,
+        }
 
     def _calculate_technical_indicators(self, df: pd.DataFrame) -> dict:
         if df is None or df.empty:
@@ -197,8 +209,9 @@ class StockAnalysisPipeline:
                 tech_data = self._calculate_technical_indicators(df)
 
             # 用腾讯实时价格覆盖
-            if realtime_data.get("price"):
+            if "price" in realtime_data and realtime_data["price"] is not None:
                 tech_data["price"] = realtime_data["price"]
+
 
             # 构建 prompt
             base_prompt = self.analyzer.generate_cio_prompt(
