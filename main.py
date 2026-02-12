@@ -44,7 +44,6 @@ from storage import get_db
 from data_provider import DataFetcherManager
 from analyzer import GeminiAnalyzer, AnalysisResult
 from notification import NotificationService
-from data_provider.market_loader import load_market_data
 
 # ================= 日志配置 =================
 
@@ -164,33 +163,42 @@ class StockAnalysisPipeline:
     # ---------- 单资产处理 ----------
 
     def process_single_stock(self, code: str) -> Optional[AnalysisResult]:
-
-        match = re.search(r"\d{6}", str(code))
+        """
+        处理单个资产分析流程
+        :param code: 股票代码（可带前缀，如 'sz000858'；也可纯数字）
+        """
+        raw_code = str(code).strip()
+        match = re.search(r"\d{6}", raw_code)
         if not match:
-            logger.warning(f"无效代码: {code}")
+            logger.warning(f"无效代码: {raw_code}")
             return None
 
+        # 6位数字代码，用于查找持仓配置
         asset_code = match.group(0)
-        logger.info(f"========== 处理资产: {asset_code} ==========")
+        logger.info(f"========== 处理资产: {asset_code} (原始: {raw_code}) ==========")
 
         try:
-
-            # 1️⃣ 实时行情
+            # ---------- 1. 腾讯实时行情 ----------
             try:
-                realtime_data = load_market_data(asset_code)
-                logger.info(f"腾讯行情获取成功: {realtime_data.get('name')}")
+                from data_provider.tencent_fetcher import TencentFetcher
+                tencent = TencentFetcher()
+                realtime_data = tencent.get_realtime_quote(raw_code) or {}
+                if realtime_data.get("name"):
+                    logger.info(f"腾讯行情获取成功: {realtime_data['name']}")
             except Exception as e:
                 logger.warning(f"腾讯行情获取失败: {e}")
                 realtime_data = {}
 
-            # 2️⃣ 历史K线
+            # ---------- 2. 历史K线数据 ----------
             df = None
             try:
-                df = self.fetcher_manager.get_daily_data(asset_code, days=120)[0]
+                # 使用 6 位数字代码获取历史数据（DataFetcherManager 内部会自动适配前缀）
+                df, source = self.fetcher_manager.get_daily_data(asset_code, days=120)
+                logger.info(f"历史数据源: {source}")
             except Exception as e:
                 logger.warning(f"历史数据获取失败: {e}")
 
-            # 资产信息
+            # ---------- 3. 资产基础信息 ----------
             stock_info = self.portfolio.get(
                 asset_code,
                 {
@@ -202,11 +210,11 @@ class StockAnalysisPipeline:
             )
             stock_info["code"] = asset_code
 
-            # 用实时名称覆盖
+            # 用实时行情中的名称覆盖（如果有）
             if realtime_data.get("name"):
                 stock_info["name"] = realtime_data["name"]
 
-            # 3️⃣ 技术指标
+            # ---------- 4. 技术指标 ----------
             if df is not None and not df.empty:
                 tech_data = self._calculate_technical_indicators(df)
             else:
@@ -222,11 +230,11 @@ class StockAnalysisPipeline:
                     "resistance": None,
                 }
 
-            # 用腾讯价格覆盖
+            # 用腾讯实时价格覆盖技术指标中的价格
             if realtime_data.get("price") is not None:
                 tech_data["price"] = realtime_data["price"]
 
-            # 4️⃣ 构建 Prompt
+            # ---------- 5. 构建提示词并调用 AI 分析 ----------
             base_prompt = self.analyzer.generate_cio_prompt(
                 stock_info,
                 tech_data,
@@ -240,7 +248,6 @@ class StockAnalysisPipeline:
             }
 
             result = self.analyzer.analyze(context, custom_prompt=base_prompt)
-
             return result
 
         except Exception as e:
