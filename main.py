@@ -9,7 +9,9 @@ AI-CIO 多资产智能分析系统
 - Gemini AI 分析
 - Telegram 推送
 
-增强健壮性：单个数据源/组件失败不影响整体运行
+增强健壮性：
+- 兼容未知命令行参数（如 --workers 1）
+- 单个数据源/组件失败不影响整体运行
 """
 
 import os
@@ -43,7 +45,7 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 from config import get_config, Config
 from storage import get_db
 
-# ---------- 数据源管理器：尝试初始化，失败则降级 ----------
+# ---------- 数据源管理器：使用已修正的 base.py，自动跳过不可用 fetcher ----------
 try:
     from data_provider import DataFetcherManager
     _fetcher_manager = DataFetcherManager()
@@ -52,7 +54,7 @@ try:
 except Exception as e:
     logger = logging.getLogger(__name__)
     logger.error(f"❌ DataFetcherManager 初始化失败: {e}，将使用降级数据源")
-    # 降级方案：创建一个仅包含基本 fetcher 的管理器
+    # 降级方案：手动创建只包含最稳定数据源的管理器
     try:
         from data_provider.efinance_fetcher import EfinanceFetcher
         from data_provider.akshare_fetcher import AkshareFetcher
@@ -61,6 +63,7 @@ except Exception as e:
             EfinanceFetcher(),
             AkshareFetcher(),
         ])
+        logger.info("✅ 降级数据源管理器初始化成功")
     except Exception as e2:
         logger.error(f"❌ 降级数据源也失败: {e2}，将无法获取历史数据")
         _fetcher_manager = None
@@ -69,7 +72,9 @@ except Exception as e:
 try:
     from analyzer import GeminiAnalyzer, AnalysisResult
     _analyzer = GeminiAnalyzer()
+    logger.info("✅ GeminiAnalyzer 初始化成功")
 except Exception as e:
+    logger = logging.getLogger(__name__)
     logger.error(f"❌ GeminiAnalyzer 初始化失败: {e}，AI分析功能不可用")
     GeminiAnalyzer = None
     AnalysisResult = None
@@ -79,7 +84,9 @@ except Exception as e:
 try:
     from notification import NotificationService
     _notifier = NotificationService()
+    logger.info("✅ NotificationService 初始化成功")
 except Exception as e:
+    logger = logging.getLogger(__name__)
     logger.error(f"❌ NotificationService 初始化失败: {e}，推送功能不可用")
     NotificationService = None
     _notifier = None
@@ -129,9 +136,9 @@ class StockAnalysisPipeline:
 
         self.portfolio = self._load_portfolio_config()
         self.db = get_db()
-        self.fetcher_manager = _fetcher_manager      # 使用全局降级后的管理器
-        self.analyzer = _analyzer                    # 可能为 None
-        self.notifier = _notifier                   # 可能为 None
+        self.fetcher_manager = _fetcher_manager
+        self.analyzer = _analyzer
+        self.notifier = _notifier
 
         if self.analyzer is None:
             logger.warning("⚠️ AI分析器未初始化，将跳过AI分析")
@@ -331,10 +338,18 @@ class StockAnalysisPipeline:
 # ================= CLI =================
 
 def parse_args():
+    """
+    使用 parse_known_args 忽略未知参数（如 CI 环境传递的 --workers 1）
+    """
     parser = argparse.ArgumentParser(description="AI-CIO 多资产分析系统")
     parser.add_argument("--stocks", type=str, help="资产代码，用逗号分隔")
     parser.add_argument("--debug", action="store_true")
-    return parser.parse_args()
+    # 解析已知参数，忽略未知参数
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        logger = logging.getLogger(__name__)
+        logger.warning(f"忽略未知命令行参数: {unknown}")
+    return args
 
 
 def main():
