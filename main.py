@@ -44,7 +44,7 @@ from storage import get_db
 from data_provider import DataFetcherManager
 from analyzer import GeminiAnalyzer, AnalysisResult
 from notification import NotificationService
-from data.market_loader import load_market_data
+from data_provider.market_loader import load_market_data
 
 # ================= 日志配置 =================
 
