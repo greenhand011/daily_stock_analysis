@@ -266,12 +266,14 @@ class DataFetcherManager:
         2. TushareFetcher (Priority 2)
         3. BaostockFetcher (Priority 3)
         4. YfinanceFetcher (Priority 4)
+        5. TencentFetcher (Priority 5)
         """
         from .efinance_fetcher import EfinanceFetcher
         from .akshare_fetcher import AkshareFetcher
         from .tushare_fetcher import TushareFetcher
         from .baostock_fetcher import BaostockFetcher
         from .yfinance_fetcher import YfinanceFetcher
+        from .tencent_fetcher import TencentFetcher   # ✅ 导入腾讯数据源
         
         self._fetchers = [
             EfinanceFetcher(),   # 最高优先级
@@ -279,7 +281,7 @@ class DataFetcherManager:
             TushareFetcher(),
             BaostockFetcher(),
             YfinanceFetcher(),
-            TencentFetcher(),   # 添加在最后，作为兜底之一，或根据优先级调整顺序
+            TencentFetcher(),   # 添加腾讯数据源（Priority 5）
         ]
         
         # 按优先级排序
