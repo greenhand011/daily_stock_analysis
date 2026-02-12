@@ -32,4 +32,5 @@ __all__ = [
     'TushareFetcher',
     'BaostockFetcher',
     'YfinanceFetcher',
+    'TencentFetcher',   # 新增
 ]
