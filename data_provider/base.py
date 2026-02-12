@@ -279,6 +279,7 @@ class DataFetcherManager:
             TushareFetcher(),
             BaostockFetcher(),
             YfinanceFetcher(),
+            TencentFetcher(),   # 添加在最后，作为兜底之一，或根据优先级调整顺序
         ]
         
         # 按优先级排序
