@@ -99,7 +99,7 @@ jobs:
 
       - name: Run Stock Analysis
         env:
-          # ========== AI 妯″瀷閰嶇疆 ==========
+          # ========== AI Model ==========
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL || 'https://api.openai.com/v1' }}
@@ -114,19 +114,19 @@ jobs:
           GEMINI_MODEL_FALLBACK: ${{ vars.GEMINI_MODEL_FALLBACK || secrets.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash' }}
           GEMINI_REQUEST_DELAY: '10.0'
 
-          # ========== 缂栫爜璁剧疆 ==========
+          # ========== Encoding ==========
           PYTHONIOENCODING: utf-8
           LANG: C.UTF-8
           LC_ALL: C.UTF-8
           PYTHONUTF8: 1
 
-          # ========== 鏁版嵁婧愰厤缃?==========
+          # ========== Data Sources ==========
           TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
           BOCHA_API_KEYS: ${{ secrets.BOCHA_API_KEYS }}
           TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
           SERPAPI_API_KEYS: ${{ secrets.SERPAPI_API_KEYS }}
 
-          # ========== 閫氱煡娓犻亾閰嶇疆 ==========
+          # ========== Notifications ==========
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
@@ -134,7 +134,7 @@ jobs:
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_FOLDER_TOKEN: ${{ secrets.FEISHU_FOLDER_TOKEN }}
 
-          # ========== 绯荤粺閰嶇疆 ==========
+          # ========== System ==========
           STOCK_LIST: ${{ vars.STOCK_LIST || 'IVV,QQQM,VTI,DIA,IWM,MSFT,NVDA,AMZN,GOOGL,META' }}
           MARKET_REVIEW_REGION: ${{ vars.MARKET_REVIEW_REGION || 'us' }}
           REPORT_TYPE: ${{ vars.REPORT_TYPE || 'simple' }}
@@ -146,31 +146,31 @@ jobs:
           ONETIME_CODE="${{ github.event.inputs.stock_code }}"
 
           echo "=========================================="
-          echo "馃殌 鍚姩 AI-CIO 鍒嗘瀽绯荤粺"
-          echo "鏃堕棿: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
-          echo "鑷€夎偂: ${STOCK_LIST}"
-          echo "甯傚満鍖哄煙: ${MARKET_REVIEW_REGION}"
+          echo "Starting AI-CIO analysis"
+          echo "Time: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
+          echo "Stock list: ${STOCK_LIST}"
+          echo "Market region: ${MARKET_REVIEW_REGION}"
           echo "OpenAI Model: ${OPENAI_MODEL}"
           if [ -n "${OPENAI_API_KEY}" ]; then
-            echo "OpenAI API Key: 宸查厤缃?
+            echo "OpenAI API Key: configured"
           else
-            echo "OpenAI API Key: 鏈厤缃?
+            echo "OpenAI API Key: missing"
           fi
           if [ -n "${FEISHU_WEBHOOK_URL}" ]; then
-            echo "Feishu Webhook: 宸查厤缃?
+            echo "Feishu Webhook: configured"
           else
-            echo "Feishu Webhook: 鏈厤缃?
+            echo "Feishu Webhook: missing"
           fi
 
           if [ -f "news_summary.json" ]; then
-            echo "鉁?妫€娴嬪埌鏂伴椈鏁版嵁"
+            echo "News summary detected"
           else
-            echo "鈿狅笍 鏈娴嬪埌鏂伴椈鏁版嵁"
+            echo "News summary not found"
           fi
           echo "=========================================="
 
           if [ -n "$ONETIME_CODE" ]; then
-            echo "馃幆 鍗曟鐙欏嚮妯″紡: $ONETIME_CODE"
+            echo "One-time analysis mode: $ONETIME_CODE"
             python main.py --stocks "$ONETIME_CODE"
           elif [ "$MODE" = "market-only" ]; then
             python main.py --market-review

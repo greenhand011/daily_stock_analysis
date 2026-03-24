@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""LLM-based stock analyzer."""
+"""LLM-based stock analyzer using direct HTTP requests."""
 
 import json
 import logging
@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+import requests
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from config import get_config
@@ -42,49 +43,26 @@ class DeepSeekAnalyzer:
 
     def __init__(self):
         self.config = get_config()
-        self.llm = None
+        self.session = requests.Session()
         self.model_name = self.config.openai_model or "gpt-4o-mini"
+        self.api_key = None
+        self.base_url = None
 
-        try:
-            from openai import OpenAI
+        if self.config.openai_api_key:
+            self.api_key = self.config.openai_api_key
+            self.base_url = (self.config.openai_base_url or "https://api.openai.com/v1").rstrip("/")
+            self.model_name = self.config.openai_model or "gpt-4o-mini"
+            logger.info("Using OpenAI-compatible endpoint: %s", self.base_url)
+        elif self.config.deepseek_api_key:
+            self.api_key = self.config.deepseek_api_key
+            self.base_url = (self.config.openai_base_url or "https://api.deepseek.com/v1").rstrip("/")
+            self.model_name = self.config.deepseek_model or "deepseek-chat"
+            logger.info("Using DeepSeek-compatible endpoint: %s", self.base_url)
+        else:
+            logger.error("No AI API key configured")
 
-            api_key = None
-            base_url = None
-
-            # Prefer explicit OpenAI configuration. This prevents OpenAI keys
-            # from being sent to DeepSeek when users only want official OpenAI.
-            if self.config.openai_api_key:
-                api_key = self.config.openai_api_key
-                base_url = self.config.openai_base_url or None
-                self.model_name = self.config.openai_model or "gpt-4o-mini"
-                if base_url:
-                    logger.info("Using OpenAI-compatible endpoint: %s", base_url)
-                else:
-                    logger.info("Using official OpenAI endpoint")
-            elif self.config.deepseek_api_key:
-                api_key = self.config.deepseek_api_key
-                base_url = self.config.openai_base_url or "https://api.deepseek.com/v1"
-                self.model_name = self.config.deepseek_model or "deepseek-chat"
-                logger.info("Using DeepSeek-compatible endpoint: %s", base_url)
-
-            if not api_key:
-                logger.error("No AI API key configured")
-                return
-
-            client_kwargs = {
-                "api_key": api_key,
-                "timeout": 30,
-            }
-            if base_url:
-                client_kwargs["base_url"] = base_url
-
-            self.llm = OpenAI(**client_kwargs)
-            logger.info("Analyzer initialized with model: %s", self.model_name)
-
-        except ImportError:
-            logger.error("openai package is not installed")
-        except Exception as exc:
-            logger.error("Analyzer initialization failed: %s", exc)
+    def _is_ready(self) -> bool:
+        return bool(self.api_key and self.base_url)
 
     def generate_cio_prompt(
         self,
@@ -104,10 +82,10 @@ class DeepSeekAnalyzer:
             status = "盈利" if profit_pct >= 0 else "亏损"
             position_context = (
                 f"用户当前持有 {shares} 股，成本价 {cost:.2f}，"
-                f"现价 {current_price:.2f}，当前{status} {abs(profit_pct):.2f}% 。"
+                f"现价 {current_price:.2f}，当前{status} {abs(profit_pct):.2f}%。"
             )
         else:
-            position_context = "用户当前没有持仓，请重点评估是否值得建仓以及风险收益比。"
+            position_context = "用户当前没有持仓，请重点评估是否值得建仓，以及风险收益比。"
 
         macro_news = trend_context.get("macro", "暂无宏观新闻摘要")
         sector_news = trend_context.get("sector", "暂无行业新闻摘要")
@@ -121,7 +99,7 @@ class DeepSeekAnalyzer:
             return str(value)
 
         prompt = f"""
-你是一位专业投资分析师，请基于市场环境、技术面和持仓信息，对 {stock_name} ({stock_code}) 输出一份简洁、明确、可执行的投资判断。
+你是一位专业投资分析师，请基于市场环境、技术面和持仓信息，为 {stock_name} ({stock_code}) 输出一份简洁、明确、可执行的投资判断。
 
 市场环境：
 - 宏观：{macro_news}
@@ -155,26 +133,43 @@ class DeepSeekAnalyzer:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def _call_ai_api(self, prompt: str) -> str:
-        if not self.llm:
+        if not self._is_ready():
             raise ValueError("AI client is not initialized")
 
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": "你是一位专业的股票分析师。"},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.3,
+            "max_tokens": 1000,
+        }
+
         try:
-            response = self.llm.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {"role": "system", "content": "你是一位专业的股票分析师。"},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                max_tokens=1000,
+            response = self.session.post(
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=60,
             )
-            return response.choices[0].message.content or ""
-        except Exception as exc:
-            logger.warning("AI API call failed and will be retried: %s", exc)
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        except requests.HTTPError as exc:
+            status_code = exc.response.status_code if exc.response is not None else "unknown"
+            body = exc.response.text[:500] if exc.response is not None else ""
+            logger.warning("AI API HTTP error %s: %s", status_code, body)
+            raise
+        except requests.RequestException as exc:
+            logger.warning("AI API request failed and will be retried: %s", exc)
             raise
 
     def analyze(self, context: Dict[str, Any], custom_prompt: Optional[str] = None) -> AnalysisResult:
-        if not self.llm:
+        if not self._is_ready():
             logger.error("AI client is not initialized")
             return self._create_error_result(context, "AI client is not initialized")
 
@@ -232,7 +227,7 @@ class DeepSeekAnalyzer:
 
             stock_name = data.get("stock_name") or context.get(
                 "stock_name",
-                f"股票{context.get('code', '')}",
+                f"资产{context.get('code', '')}",
             )
 
             return AnalysisResult(
@@ -258,6 +253,9 @@ class DeepSeekAnalyzer:
         summary = "AI 分析失败，需要人工检查。"
         if "Connection error" in error_msg or "APIConnectionError" in error_msg:
             summary = "OpenAI 连接失败，请检查 GitHub Actions 到 OpenAI 官方接口的网络连通性。"
+        if "Read timed out" in error_msg or "ConnectTimeout" in error_msg or "timed out" in error_msg:
+            summary = "OpenAI 请求超时，建议减少股票数量，或改用更稳定的 OPENAI_BASE_URL。"
+
         return AnalysisResult(
             code=context.get("code", ""),
             name=context.get("stock_name", ""),
