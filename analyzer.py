@@ -134,15 +134,20 @@ class DeepSeekAnalyzer:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def _call_ai_api(self, prompt: str) -> str:
-        if not self._is_ready():
-            raise ValueError("AI client is not initialized")
+        if not os.getenv("OPENAI_API_KEY"):
+            raise Exception("OPENAI_API_KEY is missing")
 
         print("=== CALLING OPENAI ===")
         print("API KEY EXISTS:", bool(os.getenv("OPENAI_API_KEY")))
-        print("BASE URL:", os.getenv("OPENAI_BASE_URL"))
+        print("BASE URL:", "https://api.openai.com/v1/chat/completions")
 
-        payload = {
-            "model": self.model_name,
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
+            "Content-Type": "application/json",
+        }
+        data = {
+            "model": "gpt-4o-mini",
             "messages": [
                 {"role": "user", "content": prompt},
             ],
@@ -150,19 +155,24 @@ class DeepSeekAnalyzer:
 
         try:
             response = self.session.post(
-                f"{self.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
+                url,
+                headers=headers,
+                json=data,
                 timeout=60,
             )
             print("=== OPENAI RESPONSE STATUS ===", response.status_code)
             print("=== OPENAI RESPONSE TEXT ===", response.text[:500])
             response.raise_for_status()
-            data = response.json()
-            result = data["choices"][0]["message"]["content"]
+            response_json = response.json()
+
+            if "error" in response_json:
+                raise Exception(f"OpenAI API Error: {response_json['error']}")
+
+            choices = response_json.get("choices")
+            if not choices:
+                raise Exception(f"No choices in response: {response_json}")
+
+            result = choices[0]["message"]["content"]
             if not result or len(result.strip()) < 10:
                 raise Exception("Empty AI response")
             return result
