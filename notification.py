@@ -1484,7 +1484,7 @@ class NotificationService:
                 "header": {
                     "title": {
                         "tag": "plain_text",
-                        "content": "A股智能分析报告"
+                        "content": "多资产智能分析报告"
                     }
                 },
                 "elements": [
