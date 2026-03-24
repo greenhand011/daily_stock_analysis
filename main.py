@@ -22,6 +22,7 @@ import time
 import json
 import re
 import pandas as pd
+import requests
 
 from datetime import datetime, date
 from logging.handlers import RotatingFileHandler
@@ -331,6 +332,60 @@ class StockAnalysisPipeline:
 
     # ---------- 主执行 ----------
 
+    def _send_feishu_report(self, report: str) -> bool:
+        """Send a simple Feishu card directly to avoid legacy hard-coded titles."""
+        feishu_url = getattr(self.notifier, "_feishu_url", None)
+        if not feishu_url:
+            return False
+
+        content = (
+            report
+            .replace("A股自选股智能分析报告", "多资产智能分析报告")
+            .replace("A股智能分析报告", "多资产智能分析报告")
+            .replace("A股分析报告", "多资产分析报告")
+        )
+
+        payload = {
+            "msg_type": "interactive",
+            "card": {
+                "config": {"wide_screen_mode": True},
+                "header": {
+                    "title": {
+                        "tag": "plain_text",
+                        "content": "多资产智能分析报告",
+                    }
+                },
+                "elements": [
+                    {
+                        "tag": "div",
+                        "text": {
+                            "tag": "lark_md",
+                            "content": content,
+                        },
+                    }
+                ],
+            },
+        }
+
+        try:
+            response = requests.post(feishu_url, json=payload, timeout=30)
+            if response.status_code != 200:
+                logger.error("Direct Feishu send failed: HTTP %s", response.status_code)
+                logger.error("Direct Feishu response: %s", response.text)
+                return False
+
+            result = response.json()
+            code = result.get("code") if "code" in result else result.get("StatusCode")
+            if code == 0:
+                logger.info("Direct Feishu report sent successfully")
+                return True
+
+            logger.error("Direct Feishu returned error: %s", result)
+            return False
+        except Exception as exc:
+            logger.error("Direct Feishu send failed: %s", exc)
+            return False
+
     def run(self, stock_codes: Optional[List[str]] = None):
         if not stock_codes:
             stock_codes = list(self.portfolio.keys())
@@ -353,7 +408,8 @@ class StockAnalysisPipeline:
                         .replace("A股智能分析报告", "多资产智能分析报告")
                         .replace("A股分析报告", "多资产分析报告")
                     )
-                    self.notifier.send(report)
+                    if not self._send_feishu_report(report):
+                        self.notifier.send(report)
             except Exception as e:
                 logger.error(f"推送报告失败: {e}")
 
