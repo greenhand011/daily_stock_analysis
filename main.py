@@ -210,6 +210,26 @@ class StockAnalysisPipeline:
             "resistance": df["high"].tail(20).max(),
         }
 
+    @staticmethod
+    def _normalize_asset_code(code: str) -> Optional[str]:
+        raw = str(code).strip()
+        lower_code = raw.lower()
+        upper_code = raw.upper()
+
+        if re.fullmatch(r"(?:sh|sz)?\d{6}", lower_code):
+            return lower_code[-6:]
+
+        if re.fullmatch(r"hk\d{5}", lower_code):
+            return lower_code
+
+        if re.fullmatch(r"\d{5}", raw):
+            return f"hk{raw}"
+
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9.-]{0,14}", raw):
+            return upper_code
+
+        return None
+
     # ---------- 单资产处理 ----------
 
     def process_single_stock(self, code: str) -> Optional[object]:
@@ -218,12 +238,11 @@ class StockAnalysisPipeline:
         :param code: 股票代码（可带前缀，如 'sz000858'；也可纯数字）
         """
         raw_code = str(code).strip()
-        match = re.search(r"\d{6}", raw_code)
-        if not match:
+        asset_code = self._normalize_asset_code(raw_code)
+        if not asset_code:
             logger.warning(f"无效代码: {raw_code}")
             return None
 
-        asset_code = match.group(0)
         logger.info(f"========== 处理资产: {asset_code} (原始: {raw_code}) ==========")
 
         # ---------- 1. 腾讯实时行情（独立导入，异常不影响主流程）----------
@@ -232,7 +251,7 @@ class StockAnalysisPipeline:
             # 延迟导入，避免初始化阶段强制依赖
             from data_provider.tencent_fetcher import TencentFetcher
             tencent = TencentFetcher()
-            realtime_data = tencent.get_realtime_quote(raw_code) or {}
+            realtime_data = tencent.get_realtime_quote(asset_code) or {}
             if realtime_data.get("name"):
                 logger.info(f"腾讯行情获取成功: {realtime_data['name']}")
         except ImportError:

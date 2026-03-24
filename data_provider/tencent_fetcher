@@ -12,6 +12,7 @@ TencentFetcher - 腾讯财经数据源 (Priority 5)
 """
 
 import logging
+import re
 import pandas as pd
 from typing import Optional, Dict, Any
 from tencent.stock import get_quote, get_kline, get_multi_quote
@@ -141,4 +142,6 @@ class TencentFetcher(BaseFetcher):
             elif len(code) == 5:  # 港股
                 return f"hk{code.zfill(5)}"
         # 其他情况（美股等），假设已经是正确格式
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9.-]{0,14}", code):
+            return f"us{code.upper()}"
         return code

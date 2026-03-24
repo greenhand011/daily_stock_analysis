@@ -15,6 +15,7 @@ YfinanceFetcher - 兜底数据源 (Priority 4)
 """
 
 import logging
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -72,12 +73,22 @@ class YfinanceFetcher(BaseFetcher):
             Yahoo Finance 格式代码，如 '600519.SS', '000001.SZ'
         """
         code = stock_code.strip()
+        upper_code = code.upper()
         
         # 已经包含后缀的情况
-        if '.SS' in code.upper() or '.SZ' in code.upper():
-            return code.upper()
+        if upper_code.endswith(('.SS', '.SZ', '.HK')):
+            return upper_code
         
         # 去除可能的后缀
+        if re.fullmatch(r"HK\d{5}", upper_code):
+            return f"{upper_code[2:]}.HK"
+
+        if re.fullmatch(r"\d{5}", code):
+            return f"{code}.HK"
+
+        if re.fullmatch(r"[A-Z][A-Z0-9.-]{0,14}", upper_code):
+            return upper_code
+
         code = code.replace('.SH', '').replace('.sh', '')
         
         # 根据代码前缀判断市场
@@ -87,7 +98,7 @@ class YfinanceFetcher(BaseFetcher):
             return f"{code}.SZ"
         else:
             logger.warning(f"无法确定股票 {code} 的市场，默认使用深市")
-            return f"{code}.SZ"
+            return upper_code
     
     @retry(
         stop=stop_after_attempt(3),

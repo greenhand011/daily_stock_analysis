@@ -628,9 +628,9 @@ def render_config_page(
     // 允许输入数字和字母（支持港股 hkxxxxx 格式）
     codeInput.addEventListener('input', function(e) {
         // 转小写，只保留字母和数字
-        this.value = this.value.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (this.value.length > 8) {
-            this.value = this.value.slice(0, 8);
+        this.value = this.value.toLowerCase().replace(/[^a-z0-9.-]/g, '');
+        if (this.value.length > 15) {
+            this.value = this.value.slice(0, 15);
         }
         updateButtonState();
     });
@@ -650,7 +650,8 @@ def render_config_page(
         const code = codeInput.value.trim().toLowerCase();
         const isAStock = /^\\d{6}$/.test(code);           // A股: 600519
         const isHKStock = /^hk\\d{5}$/.test(code);        // 港股: hk00700
-        submitBtn.disabled = !(isAStock || isHKStock);
+        const isUSStock = /^[a-z][a-z0-9.-]{0,14}$/.test(code);
+        submitBtn.disabled = !(isAStock || isHKStock || isUSStock);
     }
     
     // 格式化时间
@@ -831,8 +832,9 @@ def render_config_page(
         const code = codeInput.value.trim().toLowerCase();
         const isAStock = /^\d{6}$/.test(code);
         const isHKStock = /^hk\d{5}$/.test(code);
+        const isUSStock = /^[a-z][a-z0-9.-]{0,14}$/.test(code);
         
-        if (!(isAStock || isHKStock)) {
+        if (!(isAStock || isHKStock || isUSStock)) {
             return;
         }
         
