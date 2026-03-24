@@ -255,6 +255,9 @@ class DeepSeekAnalyzer:
             return None
 
     def _create_error_result(self, context: Dict[str, Any], error_msg: str) -> AnalysisResult:
+        summary = "AI 分析失败，需要人工检查。"
+        if "Connection error" in error_msg or "APIConnectionError" in error_msg:
+            summary = "OpenAI 连接失败，请检查 GitHub Actions 到 OpenAI 官方接口的网络连通性。"
         return AnalysisResult(
             code=context.get("code", ""),
             name=context.get("stock_name", ""),
@@ -263,7 +266,7 @@ class DeepSeekAnalyzer:
             operation_advice="人工复核",
             risk_alert=error_msg,
             trend_prediction="不确定",
-            analysis_summary="AI 分析失败，需要人工检查。",
+            analysis_summary=summary,
         )
 
 

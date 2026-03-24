@@ -347,6 +347,12 @@ class StockAnalysisPipeline:
             try:
                 report = self.notifier.generate_dashboard_report(results)
                 if report and self.notifier.is_available():
+                    report = (
+                        report
+                        .replace("A股自选股智能分析报告", "多资产智能分析报告")
+                        .replace("A股智能分析报告", "多资产智能分析报告")
+                        .replace("A股分析报告", "多资产分析报告")
+                    )
                     self.notifier.send(report)
             except Exception as e:
                 logger.error(f"推送报告失败: {e}")
