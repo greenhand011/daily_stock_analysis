@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - 'portfolio.json'
+      - '.github/workflows/daily_analysis.yml'
+      - '.env'
   schedule:
     - cron: '0 10 * * 1-5'
   workflow_dispatch:
@@ -27,7 +29,7 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
-      
+
       - name: 下载 TrendRadar 新闻数据
         uses: dawidd6/action-download-artifact@v2
         with:
@@ -43,12 +45,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'          # ✅ 自动缓存 pip 依赖
+          cache: 'pip'
 
       - name: 安装依赖
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt   # ⚠️ 请确保包含 tencent-stock-api
+          pip install -r requirements.txt
 
       - name: 创建必要目录
         run: |
@@ -57,67 +59,83 @@ jobs:
       - name: 执行股票分析
         env:
           # ========== AI 模型配置 ==========
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          OPENAI_BASE_URL: https://api.deepseek.com/v1
-          OPENAI_MODEL: deepseek-chat
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL || '' }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL || 'gpt-4o-mini' }}
+          LITELLM_MODEL: ${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL || 'openai/gpt-4o-mini' }}
+
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL || 'gemini-3-flash-preview' }}
           GEMINI_MODEL_FALLBACK: ${{ vars.GEMINI_MODEL_FALLBACK || secrets.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash' }}
           GEMINI_REQUEST_DELAY: '10.0'
-          
+
           # ========== 编码设置 ==========
           PYTHONIOENCODING: utf-8
           LANG: C.UTF-8
           LC_ALL: C.UTF-8
           PYTHONUTF8: 1
-          
+
           # ========== 数据源配置 ==========
           TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
           BOCHA_API_KEYS: ${{ secrets.BOCHA_API_KEYS }}
           TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
           SERPAPI_API_KEYS: ${{ secrets.SERPAPI_API_KEYS }}
-          
+
           # ========== 通知渠道配置 ==========
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_FOLDER_TOKEN: ${{ secrets.FEISHU_FOLDER_TOKEN }}
-          
+
           # ========== 系统配置 ==========
-          # 注释掉这一行，系统将使用 portfolio.json
-          # STOCK_LIST: ${{ vars.STOCK_LIST || secrets.STOCK_LIST || '600519' }}
+          STOCK_LIST: ${{ vars.STOCK_LIST || 'IVV,QQQM,VTI,DIA,IWM,MSFT,NVDA,AMZN,GOOGL,META' }}
+          MARKET_REVIEW_REGION: ${{ vars.MARKET_REVIEW_REGION || 'us' }}
+          REPORT_TYPE: ${{ vars.REPORT_TYPE || 'simple' }}
           LOG_LEVEL: INFO
           DATA_DAYS: 60
           MAX_CONCURRENT: 1
         run: |
-          # 环境变量已在 env 块定义，无需重复 export
           MODE="${{ github.event.inputs.mode || 'full' }}"
           ONETIME_CODE="${{ github.event.inputs.stock_code }}"
-          
+
           echo "=========================================="
           echo "🚀 启动 AI-CIO 分析系统"
           echo "时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
-          
+          echo "自选股: ${STOCK_LIST}"
+          echo "市场区域: ${MARKET_REVIEW_REGION}"
+          echo "OpenAI Model: ${OPENAI_MODEL}"
+          if [ -n "${OPENAI_API_KEY}" ]; then
+            echo "OpenAI API Key: 已配置"
+          else
+            echo "OpenAI API Key: 未配置"
+          fi
+          if [ -n "${FEISHU_WEBHOOK_URL}" ]; then
+            echo "Feishu Webhook: 已配置"
+          else
+            echo "Feishu Webhook: 未配置"
+          fi
+
           if [ -f "news_summary.json" ]; then
             echo "✅ 检测到新闻数据"
           else
             echo "⚠️ 未检测到新闻数据"
           fi
           echo "=========================================="
-          
+
           if [ -n "$ONETIME_CODE" ]; then
             echo "🎯 单次狙击模式: $ONETIME_CODE"
-            python main.py --stocks "$ONETIME_CODE"    # ✅ 去掉 --workers 1
+            python main.py --stocks "$ONETIME_CODE"
           elif [ "$MODE" = "market-only" ]; then
             python main.py --market-review
           elif [ "$MODE" = "stocks-only" ]; then
-            python main.py                               # ✅ 去掉 --workers 1
+            python main.py
           else
-            python main.py                               # ✅ 去掉 --workers 1
+            python main.py
           fi
-      
+
       - name: 上传分析报告
         uses: actions/upload-artifact@v4
         if: always()
