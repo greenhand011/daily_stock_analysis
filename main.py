@@ -347,7 +347,7 @@ class StockAnalysisPipeline:
             try:
                 report = self.notifier.generate_dashboard_report(results)
                 if report and self.notifier.is_available():
-                    self.notifier.send_to_telegram(report)
+                    self.notifier.send(report)
             except Exception as e:
                 logger.error(f"推送报告失败: {e}")
 

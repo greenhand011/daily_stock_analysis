@@ -7,6 +7,7 @@
 
 import logging
 import random
+import re
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -190,7 +191,16 @@ class DataFetcherManager:
         days: int = 30
     ) -> Tuple[pd.DataFrame, str]:
         errors = []
-        for fetcher in self._fetchers:
+        fetchers = self._fetchers
+
+        # US tickers should go to Yahoo Finance first. The mainland data
+        # sources add long timeouts and noisy errors for symbols like MSFT/IVV.
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9.-]{0,14}", stock_code):
+            preferred = [f for f in self._fetchers if f.name == "YfinanceFetcher"]
+            if preferred:
+                fetchers = preferred
+
+        for fetcher in fetchers:
             try:
                 logger.info(f"尝试使用 [{fetcher.name}] 获取 {stock_code}...")
                 df = fetcher.get_daily_data(
