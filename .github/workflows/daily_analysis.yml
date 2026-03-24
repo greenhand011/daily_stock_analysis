@@ -151,6 +151,7 @@ jobs:
           echo "Stock list: ${STOCK_LIST}"
           echo "Market region: ${MARKET_REVIEW_REGION}"
           echo "OpenAI Model: ${OPENAI_MODEL}"
+          echo "OpenAI Base URL: ${OPENAI_BASE_URL}"
           if [ -n "${OPENAI_API_KEY}" ]; then
             echo "OpenAI API Key: configured"
           else

@@ -327,8 +327,9 @@ class StockAnalysisPipeline:
             result = self.analyzer.analyze(context, custom_prompt=base_prompt)
             return result
         except Exception as e:
+            print("=== ANALYZER ERROR ===", str(e))
             logger.error(f"AI分析失败: {e}", exc_info=True)
-            return None
+            raise e
 
     # ---------- 主执行 ----------
 
@@ -434,6 +435,10 @@ def parse_args():
 
 
 def main():
+    print("=== VERSION CHECK ===")
+    print("GITHUB_SHA:", os.getenv("GITHUB_SHA"))
+    print("COMMIT_MARK:", "OPENAI_HTTP_V2")
+
     args = parse_args()
     setup_logging(args.debug)
 

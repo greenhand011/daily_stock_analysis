@@ -4,6 +4,7 @@
 
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -136,14 +137,15 @@ class DeepSeekAnalyzer:
         if not self._is_ready():
             raise ValueError("AI client is not initialized")
 
+        print("=== CALLING OPENAI ===")
+        print("API KEY EXISTS:", bool(os.getenv("OPENAI_API_KEY")))
+        print("BASE URL:", os.getenv("OPENAI_BASE_URL"))
+
         payload = {
             "model": self.model_name,
             "messages": [
-                {"role": "system", "content": "你是一位专业的股票分析师。"},
                 {"role": "user", "content": prompt},
             ],
-            "temperature": 0.3,
-            "max_tokens": 1000,
         }
 
         try:
@@ -156,9 +158,14 @@ class DeepSeekAnalyzer:
                 json=payload,
                 timeout=60,
             )
+            print("=== OPENAI RESPONSE STATUS ===", response.status_code)
+            print("=== OPENAI RESPONSE TEXT ===", response.text[:500])
             response.raise_for_status()
             data = response.json()
-            return data["choices"][0]["message"]["content"]
+            result = data["choices"][0]["message"]["content"]
+            if not result or len(result.strip()) < 10:
+                raise Exception("Empty AI response")
+            return result
         except requests.HTTPError as exc:
             status_code = exc.response.status_code if exc.response is not None else "unknown"
             body = exc.response.text[:500] if exc.response is not None else ""
@@ -169,12 +176,13 @@ class DeepSeekAnalyzer:
             raise
 
     def analyze(self, context: Dict[str, Any], custom_prompt: Optional[str] = None) -> AnalysisResult:
+        print("=== ANALYZER START ===")
         if not self._is_ready():
             logger.error("AI client is not initialized")
-            return self._create_error_result(context, "AI client is not initialized")
+            raise Exception("AI client is not initialized")
 
         if not custom_prompt:
-            return self._create_error_result(context, "Missing analysis prompt")
+            raise Exception("Missing analysis prompt")
 
         try:
             logger.info("Starting AI analysis for %s", context.get("code", "UNKNOWN"))
@@ -195,17 +203,17 @@ class DeepSeekAnalyzer:
                 )
                 return result
 
-            return self._create_error_result(context, "Failed to parse AI response")
-        except Exception as exc:
-            logger.error("AI analysis failed: %s", exc)
-            return self._create_error_result(context, str(exc))
+            raise Exception("Failed to parse AI response")
+        except Exception as e:
+            print("=== ANALYZER ERROR ===", str(e))
+            raise e
 
     def _parse_ai_response(self, ai_response: str, context: Dict[str, Any]) -> Optional[AnalysisResult]:
         try:
             json_match = re.search(r"\{.*\}", ai_response, re.DOTALL)
             if not json_match:
                 logger.error("No JSON object found in AI response: %s", ai_response[:200])
-                return None
+                raise Exception("No JSON object found in AI response")
 
             data = json.loads(json_match.group(0))
             required_fields = [
@@ -242,12 +250,12 @@ class DeepSeekAnalyzer:
                 buy_reason=data.get("core_view", ""),
                 sell_reason=data.get("core_view", ""),
             )
-        except json.JSONDecodeError as exc:
-            logger.error("Failed to decode AI JSON: %s", exc)
-            return None
-        except Exception as exc:
-            logger.error("Failed to parse AI response: %s", exc)
-            return None
+        except json.JSONDecodeError as e:
+            print("=== ANALYZER ERROR ===", str(e))
+            raise e
+        except Exception as e:
+            print("=== ANALYZER ERROR ===", str(e))
+            raise e
 
     def _create_error_result(self, context: Dict[str, Any], error_msg: str) -> AnalysisResult:
         summary = "AI 分析失败，需要人工检查。"
