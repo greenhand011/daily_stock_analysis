@@ -1,4 +1,4 @@
-﻿name: 姣忔棩鑲＄エ鍒嗘瀽
+﻿name: Daily Stock Analysis
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: '杩愯妯″紡'
+        description: 'Run mode'
         required: true
         default: 'full'
         type: choice
@@ -20,17 +20,17 @@ on:
           - market-only
           - stocks-only
       stock_code:
-        description: '涓存椂鍒嗘瀽浠ｇ爜(鍙€?'
+        description: 'One-time stock code (optional)'
         required: false
 
 jobs:
   analyze:
     runs-on: ubuntu-latest
     steps:
-      - name: 妫€鍑轰唬鐮?
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: 涓嬭浇 TrendRadar 鏂伴椈鏁版嵁
+      - name: Download TrendRadar News Data
         uses: dawidd6/action-download-artifact@v2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -41,22 +41,22 @@ jobs:
           search_artifacts: true
         continue-on-error: true
 
-      - name: 璁剧疆 Python 鐜
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: 瀹夎渚濊禆
+      - name: Install Dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 鍒涘缓蹇呰鐩綍
+      - name: Create Required Directories
         run: |
           mkdir -p data logs reports output
 
-      - name: 检查 OpenAI 连通性
+      - name: Check OpenAI Connectivity
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL || 'https://api.openai.com/v1' }}
@@ -97,7 +97,7 @@ jobs:
           print("==========================================")
           PY
 
-      - name: 鎵ц鑲＄エ鍒嗘瀽
+      - name: Run Stock Analysis
         env:
           # ========== AI 妯″瀷閰嶇疆 ==========
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -180,7 +180,7 @@ jobs:
             python main.py
           fi
 
-      - name: 涓婁紶鍒嗘瀽鎶ュ憡
+      - name: Upload Analysis Reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
