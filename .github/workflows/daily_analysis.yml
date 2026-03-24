@@ -1,4 +1,4 @@
-name: 每日股票分析
+﻿name: 姣忔棩鑲＄エ鍒嗘瀽
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: '运行模式'
+        description: '杩愯妯″紡'
         required: true
         default: 'full'
         type: choice
@@ -20,17 +20,17 @@ on:
           - market-only
           - stocks-only
       stock_code:
-        description: '临时分析代码(可选)'
+        description: '涓存椂鍒嗘瀽浠ｇ爜(鍙€?'
         required: false
 
 jobs:
   analyze:
     runs-on: ubuntu-latest
     steps:
-      - name: 检出代码
+      - name: 妫€鍑轰唬鐮?
         uses: actions/checkout@v4
 
-      - name: 下载 TrendRadar 新闻数据
+      - name: 涓嬭浇 TrendRadar 鏂伴椈鏁版嵁
         uses: dawidd6/action-download-artifact@v2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -41,48 +41,92 @@ jobs:
           search_artifacts: true
         continue-on-error: true
 
-      - name: 设置 Python 环境
+      - name: 璁剧疆 Python 鐜
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: 安装依赖
+      - name: 瀹夎渚濊禆
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 创建必要目录
+      - name: 鍒涘缓蹇呰鐩綍
         run: |
           mkdir -p data logs reports output
 
-      - name: 执行股票分析
+      - name: 检查 OpenAI 连通性
         env:
-          # ========== AI 模型配置 ==========
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL || 'https://api.openai.com/v1' }}
+          HTTP_PROXY: ${{ vars.HTTP_PROXY || secrets.HTTP_PROXY }}
+          HTTPS_PROXY: ${{ vars.HTTPS_PROXY || secrets.HTTPS_PROXY }}
+          ALL_PROXY: ${{ vars.ALL_PROXY || secrets.ALL_PROXY }}
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          import requests
+
+          api_key = os.getenv("OPENAI_API_KEY", "").strip()
+          base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
+
+          print("==========================================")
+          print("OpenAI Base URL:", base_url)
+          print("HTTP_PROXY configured:", bool(os.getenv("HTTP_PROXY")))
+          print("HTTPS_PROXY configured:", bool(os.getenv("HTTPS_PROXY")))
+          print("ALL_PROXY configured:", bool(os.getenv("ALL_PROXY")))
+
+          if not api_key:
+              print("OpenAI API Key: missing")
+              sys.exit(1)
+
+          try:
+              response = requests.get(
+                  f"{base_url}/models",
+                  headers={"Authorization": f"Bearer {api_key}"},
+                  timeout=20,
+              )
+              print("OpenAI connectivity status:", response.status_code)
+              print(response.text[:200])
+              response.raise_for_status()
+          except Exception as exc:
+              print("OpenAI connectivity check failed:", repr(exc))
+              sys.exit(1)
+          print("==========================================")
+          PY
+
+      - name: 鎵ц鑲＄エ鍒嗘瀽
+        env:
+          # ========== AI 妯″瀷閰嶇疆 ==========
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL || '' }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL || 'https://api.openai.com/v1' }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL || 'gpt-4o-mini' }}
           LITELLM_MODEL: ${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL || 'openai/gpt-4o-mini' }}
+          HTTP_PROXY: ${{ vars.HTTP_PROXY || secrets.HTTP_PROXY }}
+          HTTPS_PROXY: ${{ vars.HTTPS_PROXY || secrets.HTTPS_PROXY }}
+          ALL_PROXY: ${{ vars.ALL_PROXY || secrets.ALL_PROXY }}
 
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL || 'gemini-3-flash-preview' }}
           GEMINI_MODEL_FALLBACK: ${{ vars.GEMINI_MODEL_FALLBACK || secrets.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash' }}
           GEMINI_REQUEST_DELAY: '10.0'
 
-          # ========== 编码设置 ==========
+          # ========== 缂栫爜璁剧疆 ==========
           PYTHONIOENCODING: utf-8
           LANG: C.UTF-8
           LC_ALL: C.UTF-8
           PYTHONUTF8: 1
 
-          # ========== 数据源配置 ==========
+          # ========== 鏁版嵁婧愰厤缃?==========
           TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
           BOCHA_API_KEYS: ${{ secrets.BOCHA_API_KEYS }}
           TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
           SERPAPI_API_KEYS: ${{ secrets.SERPAPI_API_KEYS }}
 
-          # ========== 通知渠道配置 ==========
+          # ========== 閫氱煡娓犻亾閰嶇疆 ==========
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
@@ -90,7 +134,7 @@ jobs:
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_FOLDER_TOKEN: ${{ secrets.FEISHU_FOLDER_TOKEN }}
 
-          # ========== 系统配置 ==========
+          # ========== 绯荤粺閰嶇疆 ==========
           STOCK_LIST: ${{ vars.STOCK_LIST || 'IVV,QQQM,VTI,DIA,IWM,MSFT,NVDA,AMZN,GOOGL,META' }}
           MARKET_REVIEW_REGION: ${{ vars.MARKET_REVIEW_REGION || 'us' }}
           REPORT_TYPE: ${{ vars.REPORT_TYPE || 'simple' }}
@@ -102,31 +146,31 @@ jobs:
           ONETIME_CODE="${{ github.event.inputs.stock_code }}"
 
           echo "=========================================="
-          echo "🚀 启动 AI-CIO 分析系统"
-          echo "时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
-          echo "自选股: ${STOCK_LIST}"
-          echo "市场区域: ${MARKET_REVIEW_REGION}"
+          echo "馃殌 鍚姩 AI-CIO 鍒嗘瀽绯荤粺"
+          echo "鏃堕棿: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
+          echo "鑷€夎偂: ${STOCK_LIST}"
+          echo "甯傚満鍖哄煙: ${MARKET_REVIEW_REGION}"
           echo "OpenAI Model: ${OPENAI_MODEL}"
           if [ -n "${OPENAI_API_KEY}" ]; then
-            echo "OpenAI API Key: 已配置"
+            echo "OpenAI API Key: 宸查厤缃?
           else
-            echo "OpenAI API Key: 未配置"
+            echo "OpenAI API Key: 鏈厤缃?
           fi
           if [ -n "${FEISHU_WEBHOOK_URL}" ]; then
-            echo "Feishu Webhook: 已配置"
+            echo "Feishu Webhook: 宸查厤缃?
           else
-            echo "Feishu Webhook: 未配置"
+            echo "Feishu Webhook: 鏈厤缃?
           fi
 
           if [ -f "news_summary.json" ]; then
-            echo "✅ 检测到新闻数据"
+            echo "鉁?妫€娴嬪埌鏂伴椈鏁版嵁"
           else
-            echo "⚠️ 未检测到新闻数据"
+            echo "鈿狅笍 鏈娴嬪埌鏂伴椈鏁版嵁"
           fi
           echo "=========================================="
 
           if [ -n "$ONETIME_CODE" ]; then
-            echo "🎯 单次狙击模式: $ONETIME_CODE"
+            echo "馃幆 鍗曟鐙欏嚮妯″紡: $ONETIME_CODE"
             python main.py --stocks "$ONETIME_CODE"
           elif [ "$MODE" = "market-only" ]; then
             python main.py --market-review
@@ -136,7 +180,7 @@ jobs:
             python main.py
           fi
 
-      - name: 上传分析报告
+      - name: 涓婁紶鍒嗘瀽鎶ュ憡
         uses: actions/upload-artifact@v4
         if: always()
         with:
